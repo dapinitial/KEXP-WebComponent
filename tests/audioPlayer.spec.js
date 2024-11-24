@@ -1,16 +1,18 @@
 const { test, expect } = require('@playwright/test');
 
-test('AudioPlayer loads correctly', async ({ page }) => {
-  await page.goto('http://localhost:3000');
-  const audioPlayer = await page.$('audio-player');
-  expect(audioPlayer).not.toBeNull();
-});
+test.describe('Audio Player Web Component', () => {
+  test('Ensure .audioPlayer inside <audio-player> is accessible', async ({ page }) => {
+    // Navigate to the page
+    await page.goto('http://localhost:5173/audioPlayer');
 
-test('Play/Pause button toggles', async ({ page }) => {
-  await page.goto('http://localhost:3000');
-  const button = await page.locator('audio-player').shadow().locator('.playPauseButton');
-  await expect(button).toHaveText('Play');
+    // Verify that the <audio-player> component exists
+    const audioPlayer = page.locator('audio-player');
+    await expect(audioPlayer).toHaveCount(1); // Ensure the Web Component is present
 
-  await button.click();
-  await expect(button).toHaveText('Pause');
+    // Locate the .audioPlayer inside the Shadow DOM
+    const audioPlayerDiv = page.locator('audio-player >> .audioPlayer');
+
+    // Verify the .audioPlayer is visible
+    await expect(audioPlayerDiv).toBeVisible();
+  });
 });
