@@ -1,13 +1,31 @@
-const { defineConfig } = require('@playwright/test');
+import { defineConfig, devices } from '@playwright/test';
 
-module.exports = defineConfig({
-  timeout: 60000, // Global test timeout
+export default defineConfig({
+  testDir: './tests',
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: 'html',
   use: {
-    headless: true, // Run in headless mode
-    baseURL: 'http://localhost:5173', // Base URL for your app
-    viewport: { width: 1280, height: 720 }, // Default viewport size
-    ignoreHTTPSErrors: true, // Ignore HTTPS errors if needed
+    trace: 'on-first-retry',
+    headless: true,
+    launchOptions: {
+      args: ['--autoplay-policy=no-user-gesture-required'],
+    },
   },
-  retries: 1, // Number of retries for flaky tests
-  testDir: './tests', // Directory containing test files
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] },
+    },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
+    },
+  ],
 });

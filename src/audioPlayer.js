@@ -14,6 +14,7 @@ class AudioPlayer extends HTMLElement {
       </div>
     `;
 
+    this._isPlaying = false;
     this.audioElement = this.shadow.querySelector('#audioPlayer');
     this.playerContainer = this.shadow.querySelector('.playerContainer');
     this.handlePlayPause = this.debounce(this.handlePlayPause.bind(this), 300);
@@ -21,8 +22,17 @@ class AudioPlayer extends HTMLElement {
     this.audioStarted = false;
     this.isPlaying = false;
     this.error = null;
+  
   }
 
+  get isPlaying() {
+    return this._isPlaying;
+  }
+
+  set isPlaying(value) {
+    this._isPlaying = value;
+  }
+  
   debounce(fn, delay) {
     let timer;
     return function (...args) {
@@ -83,10 +93,12 @@ class AudioPlayer extends HTMLElement {
 
       this.audioElement.addEventListener('play', () => {
         this.isPlaying = true;
+        console.log('Audio started playing, isPlaying:', this.isPlaying);
         this.updateUI();
       });
       this.audioElement.addEventListener('pause', () => {
         this.isPlaying = false;
+        console.log('Audio paused, isPlaying:', this.isPlaying);
         this.updateUI();
       });
 
@@ -98,32 +110,27 @@ class AudioPlayer extends HTMLElement {
     if (!this.audioStarted) {
       this.initializeAudio();
     }
-
+  
     if (this.isTransitioning) {
       return;
     }
-
+  
     this.isTransitioning = true;
-
+  
     if (this.audioElement.paused) {
       this.audioElement
         .play()
-        .then(() => {
-          this.isPlaying = true;
-          this.isTransitioning = false;
-          this.updateUI();
-        })
         .catch((err) => {
           console.error('Playback failed:', err.message);
           this.error = 'Unable to play audio.';
-          this.isTransitioning = false;
           this.updateUI();
+        })
+        .finally(() => {
+          this.isTransitioning = false;
         });
     } else {
       this.audioElement.pause();
-      this.isPlaying = false;
       this.isTransitioning = false;
-      this.updateUI();
     }
   }
 
