@@ -9,6 +9,8 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+playwright-report
+test-results
 dist
 dist-ssr
 *.local
@@ -23,3 +25,4 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
