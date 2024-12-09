@@ -22,7 +22,7 @@ class AudioPlayer extends HTMLElement {
     this.audioStarted = false;
     this.isPlaying = false;
     this.error = null;
-  
+
   }
 
   get isPlaying() {
@@ -32,7 +32,7 @@ class AudioPlayer extends HTMLElement {
   set isPlaying(value) {
     this._isPlaying = value;
   }
-  
+
   debounce(fn, delay) {
     let timer;
     return function (...args) {
@@ -69,11 +69,16 @@ class AudioPlayer extends HTMLElement {
   }
 
   async fetchCurrentPlay() {
+    let lastFetchedPlay = null;
+
     try {
-      const response = await fetch(
-        `https://api.kexp.org/v2/plays?ordering=-airdate&limit=1&cachebuster=${Date.now()}`
-      );
+      const now = Date.now();
+      if (lastFetchedPlay && now - lastFetchedPlay < 30000) {
+        return;
+      }
+      const response = await fetch(`https://api.kexp.org/v2/plays?ordering=-airdate&limit=1&cachebuster=${now}`, { credentials: 'same-origin', });
       const data = await response.json();
+      lastFetchedPlay = now;
 
       if (data.results.length > 0 && data.results[0].airdate !== this.currentPlay?.airdate) {
         this.currentPlay = data.results[0];
@@ -93,12 +98,12 @@ class AudioPlayer extends HTMLElement {
 
       this.audioElement.addEventListener('play', () => {
         this.isPlaying = true;
-        console.log('Audio started playing, isPlaying:', this.isPlaying);
+        // console.log('Audio started playing, isPlaying:', this.isPlaying);
         this.updateUI();
       });
       this.audioElement.addEventListener('pause', () => {
         this.isPlaying = false;
-        console.log('Audio paused, isPlaying:', this.isPlaying);
+        // console.log('Audio paused, isPlaying:', this.isPlaying);
         this.updateUI();
       });
 
@@ -110,13 +115,13 @@ class AudioPlayer extends HTMLElement {
     if (!this.audioStarted) {
       this.initializeAudio();
     }
-  
+
     if (this.isTransitioning) {
       return;
     }
-  
+
     this.isTransitioning = true;
-  
+
     if (this.audioElement.paused) {
       this.audioElement
         .play()
