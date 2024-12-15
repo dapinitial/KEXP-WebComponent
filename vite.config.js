@@ -11,4 +11,9 @@ export default defineConfig({
       generateScopedName: '[name]__[local]___[hash:base64:5]', // Scoped naming
     },
   },
+  server: {
+    headers: {
+      'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate, proxy-revalidate',
+    },
+  },
 });
