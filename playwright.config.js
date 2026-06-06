@@ -13,9 +13,6 @@ export default defineConfig({
     baseURL: 'http://localhost:5173',
     trace: 'on-first-retry',
     headless: true,
-    launchOptions: {
-      args: ['--autoplay-policy=no-user-gesture-required'],
-    },
   },
   webServer: {
     command: 'npm run dev',
@@ -25,7 +22,13 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        // Chromium-only flag — WebKit on Linux refuses to launch with it.
+        launchOptions: {
+          args: ['--autoplay-policy=no-user-gesture-required'],
+        },
+      },
     },
     {
       name: 'firefox',
