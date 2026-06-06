@@ -178,6 +178,20 @@ test('respects the volume attribute', async ({ page }) => {
   expect(volume).toBeCloseTo(0.2, 2);
 });
 
+test('disables liking during air breaks', async ({ page }) => {
+  // KEXP airbreak plays have null artist/song — they must not be likeable.
+  await page.route(API_PATTERN, (route) =>
+    route.fulfill({
+      json: playFixture({ artist: null, song: null, play_type: 'airbreak' }),
+    })
+  );
+  await page.reload();
+
+  const player = page.locator('audio-player');
+  await expect(player.locator('.marquee')).toContainText('Air break');
+  await expect(player.locator('.likeButton')).toBeDisabled();
+});
+
 test('liking a song never triggers playback', async ({ page }) => {
   await page.evaluate(mockAudioElement);
 
@@ -240,14 +254,14 @@ test('dispatches like-changed with track and device details', async ({ page }) =
   expect(detail.deviceId).toMatch(/^[0-9a-f-]{36}$/);
 });
 
-test('hamburger flips to the playlist and back', async ({ page }) => {
+test('playlist chip flips to the playlist and back', async ({ page }) => {
   const player = page.locator('audio-player');
   const like = player.locator('.likeButton');
 
   await expect(like).toBeEnabled();
   await like.click();
 
-  await player.locator('.menuButton').click();
+  await player.locator('.playlistChip').click();
   await expect(player.locator('.flipCard')).toHaveClass(/flipped/);
   await expect(player.locator('.cardBack')).toHaveJSProperty('inert', false);
   await expect(player.locator('.cardFront')).toHaveJSProperty('inert', true);
@@ -265,7 +279,7 @@ test('removing a song asks for confirmation first', async ({ page }) => {
 
   await expect(like).toBeEnabled();
   await like.click();
-  await player.locator('.menuButton').click();
+  await player.locator('.playlistChip').click();
 
   const row = player.locator('.playlist li');
   await row.locator('.removeButton').click();
@@ -292,7 +306,7 @@ test('emails the playlist to the entered address', async ({ page }) => {
 
   await expect(like).toBeEnabled();
   await like.click();
-  await player.locator('.menuButton').click();
+  await player.locator('.playlistChip').click();
 
   await player.locator('.emailInput').fill('me@davidpuerto.com');
   await player.locator('.emailButton').click();

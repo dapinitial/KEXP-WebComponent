@@ -57,6 +57,7 @@ sheet.replaceSync(`
     text-align: center;
     background: radial-gradient(circle at 50% 0%, #161616, var(--player-bg) 70%);
     height: 100%;
+    place-content: center;
 
     & .playerContainer {
       display: flex;
@@ -68,17 +69,20 @@ sheet.replaceSync(`
     }
   }
 
-  /* ── 3D card flip: front = player, back = playlist ── */
+  /* ── The KEXP card flips over and expands into the playlist panel ── */
   .flipCard {
-    height: 100%;
-    perspective: 1200px;
+    position: relative;
+    perspective: 1000px;
+    transition: width 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+      height 0.55s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .flipInner {
     position: relative;
+    width: 100%;
     height: 100%;
     transform-style: preserve-3d;
-    transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: transform 0.55s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .flipCard.flipped .flipInner {
@@ -86,63 +90,89 @@ sheet.replaceSync(`
   }
 
   .cardFace {
-    position: absolute;
-    inset: 0;
     backface-visibility: hidden;
   }
 
+  /* Front stays in flow so the collapsed card sizes to the play button. */
   .cardFront {
-    align-content: center;
+    position: relative;
+    height: 100%;
+    display: grid;
+    place-items: center;
   }
 
   .cardBack {
+    position: absolute;
+    inset: 0;
     transform: rotateY(180deg);
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 18px 16px 54px;
+    gap: 10px;
+    padding: 14px 14px 44px;
+    background: var(--player-surface);
+    border: 1px solid rgb(255 255 255 / 8%);
+    border-radius: var(--player-radius);
     overflow-y: auto;
   }
 
-  .menuButton,
-  .flipBackButton {
-    position: absolute;
-    bottom: 10px;
-    right: 10px;
-    display: grid;
-    place-items: center;
-    gap: 3px;
-    width: 32px;
-    height: 32px;
-    padding: 7px;
-    background: transparent;
-    border: none;
-    border-radius: calc(var(--player-radius) / 2);
+  /* The like-counter chip doubles as the playlist door. */
+  .playlistChip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    background: var(--player-surface);
+    border: 1px solid rgb(255 255 255 / 10%);
+    border-radius: 999px;
+    color: var(--player-text);
+    font: inherit;
     cursor: pointer;
-    color: var(--player-muted);
-    transition: color 0.2s ease, background 0.2s ease;
+    transition: background 0.2s ease, opacity 0.2s ease;
+
+    & .chipHeart {
+      color: var(--player-like);
+    }
 
     &:hover {
-      color: var(--player-text);
-      background: rgb(255 255 255 / 8%);
+      background: var(--player-surface-hover);
     }
 
     &:focus-visible {
       outline: 2px solid var(--player-accent);
       outline-offset: 2px;
     }
-  }
 
-  .menuBar {
-    width: 16px;
-    height: 2px;
-    border-radius: 1px;
-    background: currentColor;
+    &.empty {
+      opacity: 0.55;
+    }
   }
 
   .flipBackButton {
-    font-size: 18px;
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    color: var(--player-muted);
+    font-size: 14px;
     line-height: 1;
+    transition: color 0.2s ease, background 0.2s ease;
+
+    &:hover {
+      color: var(--player-text);
+      background: rgb(255 255 255 / 10%);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--player-accent);
+      outline-offset: 2px;
+    }
   }
 
   .playlistTitle {
@@ -300,11 +330,8 @@ sheet.replaceSync(`
   }
 
   /* The heart lives visually inside the play button but is a SIBLING in the
-     DOM — nested buttons are invalid HTML and break keyboard/AT semantics. */
-  .buttonStack {
-    position: relative;
-  }
-
+     DOM — nested buttons are invalid HTML and break keyboard/AT semantics.
+     It anchors to the card front, which hugs the play button when collapsed. */
   .likeButton {
     position: absolute;
     top: 6px;
@@ -452,6 +479,7 @@ sheet.replaceSync(`
       transition: none;
     }
 
+    .flipCard,
     .flipInner {
       transition: none;
     }
@@ -462,11 +490,10 @@ const template = document.createElement('template');
 template.innerHTML = `
   <div class="audioPlayer" part="player">
     <audio id="audioPlayer" preload="none" hidden></audio>
-    <div class="flipCard">
-    <div class="flipInner">
-    <section class="cardFace cardFront" part="front">
     <div class="playerContainer">
-      <div class="buttonStack">
+      <div class="flipCard">
+      <div class="flipInner">
+      <section class="cardFace cardFront" part="front">
       <button class="playPauseButton" part="button" type="button" aria-pressed="false" aria-label="Play KEXP live stream">
         <span class="kexpLogo" part="logo">
           <span class="iconBars" aria-hidden="true">
@@ -491,30 +518,28 @@ template.innerHTML = `
           </svg>
         </span>
       </button>
+      </section>
+      <section class="cardFace cardBack" part="back" inert>
+        <h2 class="playlistTitle">Liked songs</h2>
+        <ul class="playlist" part="playlist"></ul>
+        <p class="playlistEmpty">Nothing liked yet &mdash; smash the &hearts; while a song plays.</p>
+        <form class="emailForm" novalidate>
+          <input class="emailInput" type="email" name="email" placeholder="you@example.com" aria-label="Email address" required>
+          <button class="emailButton" type="submit">Email me this list</button>
+        </form>
+        <a class="emailLink" hidden aria-hidden="true"></a>
+        <button class="flipBackButton" part="menu-close" type="button" aria-label="Close playlist">&#10005;</button>
+      </section>
+      </div>
       </div>
       <div class="marqueeWrapper" part="display">
         <div class="marquee" part="marquee" aria-live="polite">Loading now playing&hellip;</div>
       </div>
+      <button class="playlistChip" part="menu" type="button" aria-label="Show liked songs">
+        <span class="chipHeart" aria-hidden="true">&hearts;</span>
+        <span class="chipCount">0</span>
+      </button>
       <span class="errorMessage" part="error" role="alert" hidden></span>
-    </div>
-    <button class="menuButton" part="menu" type="button" aria-label="Show liked songs">
-      <span class="menuBar"></span>
-      <span class="menuBar"></span>
-      <span class="menuBar"></span>
-    </button>
-    </section>
-    <section class="cardFace cardBack" part="back" inert>
-      <h2 class="playlistTitle">Liked songs</h2>
-      <ul class="playlist" part="playlist"></ul>
-      <p class="playlistEmpty">Nothing liked yet &mdash; smash the &hearts; while a song plays.</p>
-      <form class="emailForm" novalidate>
-        <input class="emailInput" type="email" name="email" placeholder="you@example.com" aria-label="Email address" required>
-        <button class="emailButton" type="submit">Email me this list</button>
-      </form>
-      <a class="emailLink" hidden aria-hidden="true"></a>
-      <button class="flipBackButton" part="menu-close" type="button" aria-label="Back to player">&#10558;</button>
-    </section>
-    </div>
     </div>
   </div>
 `;
@@ -535,13 +560,15 @@ class AudioPlayer extends HTMLElement {
   #flipCard;
   #cardFront;
   #cardBack;
-  #menuButton;
+  #playlistChip;
+  #chipCount;
   #flipBackButton;
   #playlistEl;
   #playlistEmpty;
   #emailForm;
   #emailInput;
   #emailLink;
+  #collapsedSize = null;
 
   #currentPlay = null;
   #likedTracks = new Map();
@@ -575,7 +602,8 @@ class AudioPlayer extends HTMLElement {
     this.#flipCard = shadow.querySelector('.flipCard');
     this.#cardFront = shadow.querySelector('.cardFront');
     this.#cardBack = shadow.querySelector('.cardBack');
-    this.#menuButton = shadow.querySelector('.menuButton');
+    this.#playlistChip = shadow.querySelector('.playlistChip');
+    this.#chipCount = shadow.querySelector('.chipCount');
     this.#flipBackButton = shadow.querySelector('.flipBackButton');
     this.#playlistEl = shadow.querySelector('.playlist');
     this.#playlistEmpty = shadow.querySelector('.playlistEmpty');
@@ -593,9 +621,11 @@ class AudioPlayer extends HTMLElement {
       event.stopPropagation();
       this.toggleLike();
     });
-    this.#menuButton.addEventListener('click', () => this.#setFlipped(true));
+    this.#playlistChip.addEventListener('click', () => this.#setFlipped(true));
     this.#flipBackButton.addEventListener('click', () => this.#setFlipped(false));
     this.#emailForm.addEventListener('submit', (event) => this.#emailPlaylist(event));
+
+    this.#updateLikeUI();
     this.#audio.addEventListener('play', () => this.#setPlaying(true));
     this.#audio.addEventListener('pause', () => this.#setPlaying(false));
     this.#audio.addEventListener('error', () => this.#showError('Stream unavailable.'));
@@ -724,15 +754,15 @@ class AudioPlayer extends HTMLElement {
 
   toggleLike() {
     const play = this.#currentPlay;
-    if (!play) return;
+    if (!this.#isLikeablePlay(play)) return;
 
     const key = this.#trackKey(play);
     const liked = !this.#likedTracks.has(key);
 
     if (liked) {
       this.#likedTracks.set(key, {
-        artist: play.artist,
-        song: play.song,
+        artist: play.artist || 'Unknown Artist',
+        song: play.song || 'Unknown Song',
         airdate: play.airdate,
         likedAt: new Date().toISOString(),
       });
@@ -761,17 +791,53 @@ class AudioPlayer extends HTMLElement {
     return `${play.artist}|${play.song}`;
   }
 
+  // Airbreaks (and anything else without artist/song) aren't likeable.
+  #isLikeablePlay(play) {
+    return Boolean(play && (play.artist || play.song));
+  }
+
   #setFlipped(flipped) {
-    this.#flipCard.classList.toggle('flipped', flipped);
+    const card = this.#flipCard;
     // inert fully removes the hidden face from tab order and AT.
     this.#cardFront.inert = flipped;
     this.#cardBack.inert = !flipped;
 
     if (flipped) {
+      const rect = card.getBoundingClientRect();
+      this.#collapsedSize = { width: rect.width, height: rect.height };
+
+      // Expand toward iPhone 13 dimensions (390×844), clamped to the host.
+      const host = this.getBoundingClientRect();
+      const targetW = Math.max(rect.width, Math.min(390, host.width - 24));
+      const targetH = Math.max(rect.height, Math.min(844, host.height - 24));
+
+      card.style.width = `${rect.width}px`;
+      card.style.height = `${rect.height}px`;
+      void card.offsetWidth; // commit the starting size so the growth animates
+      card.style.width = `${targetW}px`;
+      card.style.height = `${targetH}px`;
+      card.classList.add('flipped');
+
       this.#renderPlaylist();
       this.#flipBackButton.focus();
     } else {
-      this.#menuButton.focus();
+      if (this.#collapsedSize) {
+        card.style.width = `${this.#collapsedSize.width}px`;
+        card.style.height = `${this.#collapsedSize.height}px`;
+      }
+      card.classList.remove('flipped');
+      this.#playlistChip.focus();
+
+      // Once the shrink finishes, let the card size itself naturally again.
+      const clear = () => {
+        card.style.width = '';
+        card.style.height = '';
+      };
+      if (this.#reducedMotion.matches) {
+        clear();
+      } else {
+        card.addEventListener('transitionend', clear, { once: true });
+      }
     }
   }
 
@@ -785,7 +851,7 @@ class AudioPlayer extends HTMLElement {
 
       const title = document.createElement('span');
       title.className = 'trackTitle';
-      title.textContent = `${track.artist} — ${track.song}`;
+      title.textContent = `${track.artist || 'Unknown Artist'} — ${track.song || 'Unknown Song'}`;
 
       const removeButton = document.createElement('button');
       removeButton.className = 'removeButton';
@@ -867,7 +933,9 @@ class AudioPlayer extends HTMLElement {
 
   #loadLikes() {
     try {
-      return new Map(JSON.parse(localStorage.getItem(STORAGE_LIKES_KEY) ?? '[]'));
+      const entries = JSON.parse(localStorage.getItem(STORAGE_LIKES_KEY) ?? '[]');
+      // Drop malformed entries (e.g., airbreaks liked before they were blocked).
+      return new Map(entries.filter(([, t]) => t && (t.artist || t.song)));
     } catch {
       return new Map();
     }
@@ -883,10 +951,15 @@ class AudioPlayer extends HTMLElement {
 
   #updateLikeUI() {
     const liked = this.isLiked;
-    this.#likeButton.disabled = !this.#currentPlay;
+    this.#likeButton.disabled = !this.#isLikeablePlay(this.#currentPlay);
     this.#likeButton.classList.toggle('liked', liked);
     this.#likeButton.setAttribute('aria-pressed', String(liked));
     this.#likeButton.setAttribute('aria-label', liked ? 'Unlike this song' : 'Like this song');
+
+    const size = this.#likedTracks.size;
+    this.#chipCount.textContent = String(size);
+    this.#playlistChip.classList.toggle('empty', size === 0);
+    this.#playlistChip.setAttribute('aria-label', `Show liked songs (${size})`);
   }
 
   // Twitter-style burst: the heart double-flips on the X axis with motion
@@ -1047,9 +1120,16 @@ class AudioPlayer extends HTMLElement {
   }
 
   #updateNowPlaying() {
-    const artist = this.#currentPlay?.artist || 'Unknown Artist';
-    const song = this.#currentPlay?.song || 'Unknown Song';
-    this.#marquee.textContent = `Listening to: ${artist} - ${song} on 90.3 FM Seattle`;
+    const play = this.#currentPlay;
+
+    if (this.#isLikeablePlay(play)) {
+      const artist = play.artist || 'Unknown Artist';
+      const song = play.song || 'Unknown Song';
+      this.#marquee.textContent = `Listening to: ${artist} - ${song} on 90.3 FM Seattle`;
+    } else {
+      this.#marquee.textContent = 'Air break — KEXP 90.3 FM Seattle';
+    }
+
     this.#updateMarquee();
     this.#updateLikeUI();
   }
