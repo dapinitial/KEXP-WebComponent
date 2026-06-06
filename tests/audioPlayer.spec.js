@@ -1,116 +1,191 @@
 import { test, expect } from '@playwright/test';
 
-test.beforeEach(async ({ page, context }) => {
-  // Grant autoplay permission
-  await context.grantPermissions([], { origin: 'http://localhost:5173' });
+const API_PATTERN = 'https://api.kexp.org/v2/plays*';
+const STREAM_PATTERN = 'https://kexp.streamguys1.com/**';
 
-  // Navigate to the local Vite development server
-  await page.goto('http://localhost:5173');
+const playFixture = (overrides = {}) => ({
+  results: [
+    {
+      artist: 'Mudhoney',
+      song: 'Touch Me I\'m Sick',
+      airdate: '2026-06-06T10:00:00-07:00',
+      ...overrides,
+    },
+  ],
 });
 
-test('play/pause button reflects isPlaying state', async ({ page }) => {
-  const audioPlayer = page.locator('audio-player');
+// Replace the real stream + audio methods so tests never open a network stream.
+const mockAudioElement = () => {
+  const player = document.querySelector('audio-player');
+  const audio = player.shadowRoot.querySelector('#audioPlayer');
+  audio.load = () => {};
+  audio.play = function () {
+    Object.defineProperty(this, 'paused', { value: false, configurable: true });
+    this.dispatchEvent(new Event('play'));
+    return Promise.resolve();
+  };
+  audio.pause = function () {
+    Object.defineProperty(this, 'paused', { value: true, configurable: true });
+    this.dispatchEvent(new Event('pause'));
+  };
+};
 
-  // Capture console logs from the page
-  page.on('console', (msg) => {
-    console.log('PAGE LOG:', msg.text());
-  });
-
-  // Locate play/pause button and text
-  const playPauseButton = audioPlayer.locator('.playPauseButton');
-  const buttonText = playPauseButton.locator('span');
-
-  // Ensure isPlaying is accessible
-  const isPlayingProperty = await page.evaluate(() => {
-    const player = document.querySelector('audio-player');
-    return typeof player.isPlaying !== 'undefined';
-  });
-  expect(isPlayingProperty).toBeTruthy();
-
-  // Get initial isPlaying state
-  let isPlaying = await page.evaluate(() => {
-    const player = document.querySelector('audio-player');
-    return player.isPlaying;
-  });
+test.beforeEach(async ({ page }) => {
+  await page.route(STREAM_PATTERN, (route) => route.abort());
+  await page.route(API_PATTERN, (route) =>
+    route.fulfill({ json: playFixture() })
+  );
+  await page.goto('/');
 });
 
-test('play/pause button updates text based on isPlaying state', async ({ page }) => {
-  await page.evaluate(() => {
-    const player = document.querySelector('audio-player');
-    const audio = player.shadowRoot.querySelector('#audioPlayer');
+test('renders the player and now-playing info from the API', async ({ page }) => {
+  const player = page.locator('audio-player');
+  const button = player.locator('.playPauseButton');
+  const marquee = player.locator('.marquee');
 
-    // Mock the play method
-    audio.play = function () {
-      this.dispatchEvent(new Event('play'));
-    };
-
-    // Mock the pause method
-    audio.pause = function () {
-      this.dispatchEvent(new Event('pause'));
-    };
-  });
+  await expect(button).toBeVisible();
+  await expect(button).toHaveText(/PLAY/);
+  await expect(button).toHaveAttribute('aria-pressed', 'false');
+  await expect(marquee).toHaveText(
+    'Listening to: Mudhoney - Touch Me I\'m Sick on 90.3 FM Seattle'
+  );
 });
 
-test('handles error state', async ({ page }) => {
-  // Mock fetch to simulate error
-  await page.route('https://api.kexp.org/v2/plays*', (route) => {
-    route.fulfill({
-      status: 500,
-      contentType: 'application/json',
-      body: JSON.stringify({ error: 'Internal Server Error' })
-    });
-  });
+test('toggles playback state and UI on button click', async ({ page }) => {
+  await page.evaluate(mockAudioElement);
 
-  // Reload page to trigger error
+  const player = page.locator('audio-player');
+  const button = player.locator('.playPauseButton');
+  const iconBars = player.locator('.iconBars');
+
+  await button.click();
+  await expect(button).toHaveText(/PAUSE/);
+  await expect(button).toHaveAttribute('aria-pressed', 'true');
+  await expect(iconBars).toHaveClass(/animating/);
+  expect(
+    await page.evaluate(() => document.querySelector('audio-player').isPlaying)
+  ).toBe(true);
+
+  await button.click();
+  await expect(button).toHaveText(/PLAY/);
+  await expect(button).toHaveAttribute('aria-pressed', 'false');
+  await expect(iconBars).not.toHaveClass(/animating/);
+  expect(
+    await page.evaluate(() => document.querySelector('audio-player').isPlaying)
+  ).toBe(false);
+});
+
+test('shows an error when the API fails but keeps the player usable', async ({ page }) => {
+  await page.route(API_PATTERN, (route) =>
+    route.fulfill({ status: 500, json: { error: 'Internal Server Error' } })
+  );
   await page.reload();
 
-  // Wait for error to be displayed
-  await page.waitForTimeout(2000);
-
-  // Find the audio player
-  const audioPlayer = page.locator('audio-player');
-
-  // Check error message
-  const errorMessage = audioPlayer.locator('.errorMessage');
-  await expect(errorMessage).toBeVisible();
+  const player = page.locator('audio-player');
+  await expect(player.locator('.errorMessage')).toBeVisible();
+  await expect(player.locator('.errorMessage')).toHaveText('Now playing info unavailable.');
+  // The stream is independent of the metadata API — the button must survive.
+  await expect(player.locator('.playPauseButton')).toBeVisible();
 });
 
-test('marquee effect applied correctly', async ({ page }) => {
-  // Wait for fetch to complete
-  await page.waitForTimeout(2000);
+test('clears the error once the API recovers', async ({ page }) => {
+  let requestCount = 0;
+  await page.route(API_PATTERN, (route) => {
+    requestCount += 1;
+    if (requestCount === 1) {
+      return route.fulfill({ status: 500, json: { error: 'oops' } });
+    }
+    return route.fulfill({ json: playFixture() });
+  });
+  await page.reload();
 
-  // Find the audio player
-  const audioPlayer = page.locator('audio-player');
+  const player = page.locator('audio-player');
+  await expect(player.locator('.errorMessage')).toBeVisible();
 
-  // Check marquee wrapper and marquee elements
-  const marqueeWrapper = audioPlayer.locator('.marqueeWrapper');
-  const marquee = audioPlayer.locator('.marquee');
+  // Speed up polling so recovery happens within the test.
+  await page.evaluate(() =>
+    document.querySelector('audio-player').setAttribute('poll-interval', '200')
+  );
 
-  await expect(marqueeWrapper).toBeVisible();
-  await expect(marquee).toBeVisible();
-
-  // Check for scrolling class if text is long
-  const marqueeText = await marquee.textContent();
-  const marqueeWidth = await marquee.evaluate(el => el.scrollWidth);
-  const wrapperWidth = await marqueeWrapper.evaluate(el => el.offsetWidth);
-
-  if (marqueeWidth > wrapperWidth) {
-    await expect(marquee).toHaveClass(/scrolling/);
-  }
+  await expect(player.locator('.errorMessage')).toBeHidden();
+  await expect(player.locator('.marquee')).toContainText('Mudhoney');
 });
 
-test('volume set correctly', async ({ page }) => {
-  // Initialize the audio to set the volume
-  await page.evaluate(() => {
+test('dispatches track-changed when a new play arrives', async ({ page }) => {
+  // Serve a different track than the one loaded in beforeEach.
+  await page.route(API_PATTERN, (route) =>
+    route.fulfill({
+      json: playFixture({
+        artist: 'Sleater-Kinney',
+        song: 'Dig Me Out',
+        airdate: '2026-06-06T10:05:00-07:00',
+      }),
+    })
+  );
+
+  const detail = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const player = document.querySelector('audio-player');
+        player.addEventListener('track-changed', (e) => resolve(e.detail), { once: true });
+        // Restarting the poll triggers an immediate refetch.
+        player.setAttribute('poll-interval', '200');
+      })
+  );
+
+  expect(detail.artist).toBe('Sleater-Kinney');
+  expect(detail.song).toBe('Dig Me Out');
+});
+
+test('marquee scrolls only when the text overflows', async ({ page }) => {
+  // Headless browsers force prefers-reduced-motion, which the component
+  // correctly honors — emulate a user with no such preference.
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+  const player = page.locator('audio-player');
+  const marquee = player.locator('.marquee');
+
+  const isAnimating = () =>
+    marquee.evaluate((el) => el.getAnimations().some((a) => a.playState === 'running'));
+
+  // Wide viewport: short text fits, no scrolling.
+  await page.setViewportSize({ width: 1280, height: 400 });
+  await expect(marquee).toHaveText(/Mudhoney/);
+  await expect.poll(isAnimating).toBe(false);
+
+  // Narrow viewport: text overflows, scrolling kicks in (after the resize debounce).
+  await page.setViewportSize({ width: 240, height: 400 });
+  await expect.poll(isAnimating).toBe(true);
+});
+
+test('respects the volume attribute', async ({ page }) => {
+  await page.evaluate(mockAudioElement);
+  await page.evaluate(() =>
+    document.querySelector('audio-player').setAttribute('volume', '0.2')
+  );
+
+  await page.locator('audio-player .playPauseButton').click();
+
+  const volume = await page.evaluate(
+    () => document.querySelector('audio-player').shadowRoot.querySelector('#audioPlayer').volume
+  );
+  expect(volume).toBeCloseTo(0.2, 2);
+});
+
+test('clamps invalid volume values to a safe default', async ({ page }) => {
+  const volumes = await page.evaluate(() => {
     const player = document.querySelector('audio-player');
-    player.initializeAudio();
+    const readings = [];
+    player.setAttribute('volume', 'not-a-number');
+    readings.push(player.volume);
+    player.setAttribute('volume', '5');
+    readings.push(player.volume);
+    player.setAttribute('volume', '-1');
+    readings.push(player.volume);
+    return readings;
   });
 
-  // Interact with shadow DOM to get audio element and check volume
-  const initialVolume = await page.evaluate(() => {
-    const player = document.querySelector('audio-player');
-    const audio = player.shadowRoot.querySelector('#audioPlayer');
-    return audio.volume;
-  });
-  expect(initialVolume).toBeCloseTo(0.03, 2); // Use toBeCloseTo for floating point numbers
+  expect(volumes[0]).toBe(0.5); // default
+  expect(volumes[1]).toBe(1); // clamped high
+  expect(volumes[2]).toBe(0); // clamped low
 });

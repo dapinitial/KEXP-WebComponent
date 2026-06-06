@@ -55,24 +55,82 @@ This component makes it easy to share KEXP wherever you are and even embed it in
 </html>
 ```
 
+## ⚙️ Attributes
+
+| Attribute       | Default                                      | Description                                  |
+| --------------- | -------------------------------------------- | -------------------------------------------- |
+| `stream-url`    | `https://kexp.streamguys1.com/kexp160.aac`   | Audio stream source                          |
+| `volume`        | `0.5`                                        | Playback volume, clamped to `0`–`1`          |
+| `poll-interval` | `15000`                                      | Now-playing refresh interval in milliseconds |
+
+```html
+<audio-player volume="0.8" poll-interval="30000"></audio-player>
+```
+
+## 🧩 Properties & Methods
+
+- `player.play()` / `player.pause()` / `player.toggle()` — control playback programmatically
+- `player.isPlaying` — current playback state (read-only)
+- `player.currentPlay` — the latest play object from the KEXP API (read-only)
+
+## 📡 Events
+
+| Event             | `detail`                     | Fired when…                       |
+| ----------------- | ---------------------------- | --------------------------------- |
+| `playing-changed` | `{ isPlaying }`              | Playback starts or stops          |
+| `track-changed`   | `{ artist, song, airdate }`  | A new song hits the airwaves      |
+| `player-error`    | `{ message }`                | The now-playing fetch fails       |
+
+```js
+document.querySelector('audio-player')
+  .addEventListener('track-changed', ({ detail }) => {
+    console.log(`Now playing: ${detail.artist} – ${detail.song}`);
+  });
+```
+
 ## 🎨 Customization
-- Styles: The component’s styles are scoped but easy to modify in audioPlayer.js under the getStyles() method.
-- Functionality: Update the applyMarqueeEffect, handlePlayPause, or other methods for enhanced interactions.
+
+Theme it from the outside with CSS custom properties — no need to touch the component:
+
+```css
+audio-player {
+  --player-bg: #11001c;
+  --player-accent: #ffb703;
+  --player-radius: 20px;
+}
+```
+
+Available tokens: `--player-bg`, `--player-surface`, `--player-surface-hover`, `--player-accent`, `--player-text`, `--player-muted`, `--player-error`, `--player-radius`.
+
+For deeper restyling, the shadow DOM exposes parts: `player`, `button`, `button-text`, `logo`, `display`, `marquee`, `error`.
+
+```css
+audio-player::part(button):hover {
+  box-shadow: 0 4px 24px rgb(255 90 30 / 35%);
+}
+```
+
+The component also respects `prefers-reduced-motion` — animations are disabled for users who ask for less movement.
 
 ---
 
 ## 📂 Project Structure
 
 ```plaintext
-Copy code
 src/
-├── audioPlayer/
-│   ├── index.html        # Example usage
-│   ├── audioPlayer.js    # Web Component logic
-│   ├── audioPlayer.css   # Scoped styles
-├── global.css            # Global styles
-├── assets/               # Public assets (e.g., favicon, images)
-└── main.js               # Main entry point
+├── index.html            # Example usage
+├── audioPlayer.js        # Web Component (logic + scoped styles)
+├── global.css            # Global styles for the demo page
+└── assets/               # Public assets (e.g., favicon)
+tests/
+└── audioPlayer.spec.js   # Playwright tests (chromium, firefox, webkit)
+```
+
+## 🧪 Testing
+
+```bash
+npm test          # Playwright auto-starts the dev server
+npm run test:ui   # Interactive UI mode
 ```
 
 ## 🙌 Contributing
