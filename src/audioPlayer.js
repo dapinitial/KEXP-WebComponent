@@ -57,7 +57,6 @@ sheet.replaceSync(`
     text-align: center;
     background: radial-gradient(circle at 50% 0%, #161616, var(--player-bg) 70%);
     height: 100%;
-    place-content: center;
 
     & .playerContainer {
       display: flex;
@@ -66,6 +65,204 @@ sheet.replaceSync(`
       flex-direction: column;
       gap: 12px;
       padding: 8px;
+    }
+  }
+
+  /* ── 3D card flip: front = player, back = playlist ── */
+  .flipCard {
+    height: 100%;
+    perspective: 1200px;
+  }
+
+  .flipInner {
+    position: relative;
+    height: 100%;
+    transform-style: preserve-3d;
+    transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .flipCard.flipped .flipInner {
+    transform: rotateY(180deg);
+  }
+
+  .cardFace {
+    position: absolute;
+    inset: 0;
+    backface-visibility: hidden;
+  }
+
+  .cardFront {
+    align-content: center;
+  }
+
+  .cardBack {
+    transform: rotateY(180deg);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px 16px 54px;
+    overflow-y: auto;
+  }
+
+  .menuButton,
+  .flipBackButton {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    display: grid;
+    place-items: center;
+    gap: 3px;
+    width: 32px;
+    height: 32px;
+    padding: 7px;
+    background: transparent;
+    border: none;
+    border-radius: calc(var(--player-radius) / 2);
+    cursor: pointer;
+    color: var(--player-muted);
+    transition: color 0.2s ease, background 0.2s ease;
+
+    &:hover {
+      color: var(--player-text);
+      background: rgb(255 255 255 / 8%);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--player-accent);
+      outline-offset: 2px;
+    }
+  }
+
+  .menuBar {
+    width: 16px;
+    height: 2px;
+    border-radius: 1px;
+    background: currentColor;
+  }
+
+  .flipBackButton {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .playlistTitle {
+    color: var(--player-text);
+    font-size: 14px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .playlist {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    & li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 10px;
+      background: rgb(255 255 255 / 4%);
+      border-radius: calc(var(--player-radius) / 2);
+      text-align: left;
+    }
+
+    & .trackTitle {
+      color: var(--player-text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    & .rowConfirm {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--player-error);
+      white-space: nowrap;
+    }
+
+    & button {
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--player-muted);
+      font: inherit;
+      padding: 2px 6px;
+
+      &:hover {
+        color: var(--player-text);
+        background: rgb(255 255 255 / 8%);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--player-accent);
+        outline-offset: 1px;
+      }
+    }
+
+    & .confirmYes {
+      color: var(--player-error);
+      font-weight: 600;
+    }
+  }
+
+  .playlistEmpty {
+    margin: 0;
+  }
+
+  .playlistEmpty[hidden] {
+    display: none;
+  }
+
+  .emailForm {
+    display: flex;
+    gap: 8px;
+    margin-top: auto;
+
+    & .emailInput {
+      flex: 1;
+      min-width: 0;
+      padding: 8px 10px;
+      background: rgb(255 255 255 / 6%);
+      border: 1px solid rgb(255 255 255 / 12%);
+      border-radius: calc(var(--player-radius) / 2);
+      color: var(--player-text);
+      font: inherit;
+
+      &::placeholder {
+        color: var(--player-muted);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--player-accent);
+        outline-offset: 1px;
+      }
+    }
+
+    & .emailButton {
+      padding: 8px 12px;
+      background: var(--player-surface);
+      border: 1px solid rgb(255 255 255 / 12%);
+      border-radius: calc(var(--player-radius) / 2);
+      color: var(--player-text);
+      font: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+
+      &:hover {
+        background: var(--player-surface-hover);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--player-accent);
+        outline-offset: 2px;
+      }
     }
   }
 
@@ -156,13 +353,22 @@ sheet.replaceSync(`
     }
   }
 
+  /* Positioning anchor so the burst is centered on the heart itself. */
+  .heartWrap {
+    position: relative;
+    display: grid;
+    place-items: center;
+  }
+
   .likeParticle {
     position: absolute;
     top: 50%;
     left: 50%;
+    /* The translate property composes with animated transforms, so the
+       centering survives the flight animation (and border widths). */
+    translate: -50% -50%;
     width: 5px;
     height: 5px;
-    margin: -2.5px 0 0 -2.5px;
     border-radius: 50%;
     pointer-events: none;
   }
@@ -245,6 +451,10 @@ sheet.replaceSync(`
     .playPauseButton {
       transition: none;
     }
+
+    .flipInner {
+      transition: none;
+    }
   }
 `);
 
@@ -252,6 +462,9 @@ const template = document.createElement('template');
 template.innerHTML = `
   <div class="audioPlayer" part="player">
     <audio id="audioPlayer" preload="none" hidden></audio>
+    <div class="flipCard">
+    <div class="flipInner">
+    <section class="cardFace cardFront" part="front">
     <div class="playerContainer">
       <div class="buttonStack">
       <button class="playPauseButton" part="button" type="button" aria-pressed="false" aria-label="Play KEXP live stream">
@@ -272,15 +485,36 @@ template.innerHTML = `
         <span class="buttonText" part="button-text">PLAY</span>
       </button>
       <button class="likeButton" part="like" type="button" aria-pressed="false" aria-label="Like this song" disabled>
-        <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
-        </svg>
+        <span class="heartWrap">
+          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
+          </svg>
+        </span>
       </button>
       </div>
       <div class="marqueeWrapper" part="display">
         <div class="marquee" part="marquee" aria-live="polite">Loading now playing&hellip;</div>
       </div>
       <span class="errorMessage" part="error" role="alert" hidden></span>
+    </div>
+    <button class="menuButton" part="menu" type="button" aria-label="Show liked songs">
+      <span class="menuBar"></span>
+      <span class="menuBar"></span>
+      <span class="menuBar"></span>
+    </button>
+    </section>
+    <section class="cardFace cardBack" part="back" inert>
+      <h2 class="playlistTitle">Liked songs</h2>
+      <ul class="playlist" part="playlist"></ul>
+      <p class="playlistEmpty">Nothing liked yet &mdash; smash the &hearts; while a song plays.</p>
+      <form class="emailForm" novalidate>
+        <input class="emailInput" type="email" name="email" placeholder="you@example.com" aria-label="Email address" required>
+        <button class="emailButton" type="submit">Email me this list</button>
+      </form>
+      <a class="emailLink" hidden aria-hidden="true"></a>
+      <button class="flipBackButton" part="menu-close" type="button" aria-label="Back to player">&#10558;</button>
+    </section>
+    </div>
     </div>
   </div>
 `;
@@ -297,6 +531,17 @@ class AudioPlayer extends HTMLElement {
   #errorEl;
 
   #likeButton;
+  #heartWrap;
+  #flipCard;
+  #cardFront;
+  #cardBack;
+  #menuButton;
+  #flipBackButton;
+  #playlistEl;
+  #playlistEmpty;
+  #emailForm;
+  #emailInput;
+  #emailLink;
 
   #currentPlay = null;
   #likedTracks = new Map();
@@ -326,6 +571,17 @@ class AudioPlayer extends HTMLElement {
     this.#marqueeWrapper = shadow.querySelector('.marqueeWrapper');
     this.#errorEl = shadow.querySelector('.errorMessage');
     this.#likeButton = shadow.querySelector('.likeButton');
+    this.#heartWrap = shadow.querySelector('.heartWrap');
+    this.#flipCard = shadow.querySelector('.flipCard');
+    this.#cardFront = shadow.querySelector('.cardFront');
+    this.#cardBack = shadow.querySelector('.cardBack');
+    this.#menuButton = shadow.querySelector('.menuButton');
+    this.#flipBackButton = shadow.querySelector('.flipBackButton');
+    this.#playlistEl = shadow.querySelector('.playlist');
+    this.#playlistEmpty = shadow.querySelector('.playlistEmpty');
+    this.#emailForm = shadow.querySelector('.emailForm');
+    this.#emailInput = shadow.querySelector('.emailInput');
+    this.#emailLink = shadow.querySelector('.emailLink');
 
     this.#likedTracks = this.#loadLikes();
 
@@ -337,6 +593,9 @@ class AudioPlayer extends HTMLElement {
       event.stopPropagation();
       this.toggleLike();
     });
+    this.#menuButton.addEventListener('click', () => this.#setFlipped(true));
+    this.#flipBackButton.addEventListener('click', () => this.#setFlipped(false));
+    this.#emailForm.addEventListener('submit', (event) => this.#emailPlaylist(event));
     this.#audio.addEventListener('play', () => this.#setPlaying(true));
     this.#audio.addEventListener('pause', () => this.#setPlaying(false));
     this.#audio.addEventListener('error', () => this.#showError('Stream unavailable.'));
@@ -502,6 +761,110 @@ class AudioPlayer extends HTMLElement {
     return `${play.artist}|${play.song}`;
   }
 
+  #setFlipped(flipped) {
+    this.#flipCard.classList.toggle('flipped', flipped);
+    // inert fully removes the hidden face from tab order and AT.
+    this.#cardFront.inert = flipped;
+    this.#cardBack.inert = !flipped;
+
+    if (flipped) {
+      this.#renderPlaylist();
+      this.#flipBackButton.focus();
+    } else {
+      this.#menuButton.focus();
+    }
+  }
+
+  #renderPlaylist() {
+    this.#playlistEl.textContent = '';
+    const entries = [...this.#likedTracks.entries()];
+    this.#playlistEmpty.hidden = entries.length > 0;
+
+    for (const [key, track] of entries) {
+      const li = document.createElement('li');
+
+      const title = document.createElement('span');
+      title.className = 'trackTitle';
+      title.textContent = `${track.artist} — ${track.song}`;
+
+      const removeButton = document.createElement('button');
+      removeButton.className = 'removeButton';
+      removeButton.type = 'button';
+      removeButton.textContent = '✕';
+      removeButton.setAttribute('aria-label', `Remove ${track.song} from playlist`);
+
+      const confirmBox = document.createElement('span');
+      confirmBox.className = 'rowConfirm';
+      confirmBox.hidden = true;
+
+      const confirmLabel = document.createElement('span');
+      confirmLabel.textContent = 'Remove?';
+
+      const confirmYes = document.createElement('button');
+      confirmYes.className = 'confirmYes';
+      confirmYes.type = 'button';
+      confirmYes.textContent = 'Yes';
+
+      const confirmNo = document.createElement('button');
+      confirmNo.className = 'confirmNo';
+      confirmNo.type = 'button';
+      confirmNo.textContent = 'Cancel';
+
+      removeButton.addEventListener('click', () => {
+        removeButton.hidden = true;
+        confirmBox.hidden = false;
+        confirmYes.focus();
+      });
+      confirmNo.addEventListener('click', () => {
+        confirmBox.hidden = true;
+        removeButton.hidden = false;
+        removeButton.focus();
+      });
+      confirmYes.addEventListener('click', () => this.#removeFromPlaylist(key));
+
+      confirmBox.append(confirmLabel, confirmYes, confirmNo);
+      li.append(title, removeButton, confirmBox);
+      this.#playlistEl.appendChild(li);
+    }
+  }
+
+  #removeFromPlaylist(key) {
+    const track = this.#likedTracks.get(key);
+    if (!track) return;
+
+    this.#likedTracks.delete(key);
+    this.#saveLikes();
+    this.#updateLikeUI();
+    this.#renderPlaylist();
+    this.dispatchEvent(
+      new CustomEvent('like-changed', {
+        detail: {
+          liked: false,
+          artist: track.artist,
+          song: track.song,
+          airdate: track.airdate,
+          deviceId: this.deviceId,
+          playlistSize: this.#likedTracks.size,
+        },
+      })
+    );
+  }
+
+  #emailPlaylist(event) {
+    event.preventDefault();
+
+    if (!this.#emailInput.reportValidity()) return;
+
+    const lines = this.playlist.map((t) => `${t.artist} — ${t.song}`);
+    const subject = 'My KEXP liked songs';
+    const body = `${lines.join('\n')}\n\nHeard on KEXP 90.3 FM Seattle — kexp.org`;
+
+    this.#emailLink.href =
+      `mailto:${encodeURIComponent(this.#emailInput.value)}` +
+      `?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    this.#emailLink.click();
+  }
+
   #loadLikes() {
     try {
       return new Map(JSON.parse(localStorage.getItem(STORAGE_LIKES_KEY) ?? '[]'));
@@ -526,27 +889,43 @@ class AudioPlayer extends HTMLElement {
     this.#likeButton.setAttribute('aria-label', liked ? 'Unlike this song' : 'Like this song');
   }
 
-  // Twitter-style burst: heart pops with an overshoot bounce while a ring
-  // expands and confetti particles fly outward. Pure WAAPI, self-cleaning.
+  // Twitter-style burst: the heart double-flips on the X axis with motion
+  // blur while a ring expands and confetti particles fly outward from the
+  // heart's center. Pure WAAPI, self-cleaning.
   #burstHearts() {
     if (this.#reducedMotion.matches) return;
 
     const heart = this.#likeButton.querySelector('svg');
     heart.animate(
       [
-        { transform: 'scale(0)' },
-        { transform: 'scale(1.35)', offset: 0.6 },
-        { transform: 'scale(1)' },
+        {
+          transform: 'perspective(160px) rotateX(0deg) scale(0.4)',
+          filter: 'blur(0px)',
+        },
+        {
+          transform: 'perspective(160px) rotateX(360deg) scale(1.25)',
+          filter: 'blur(2px)',
+          offset: 0.45,
+        },
+        {
+          transform: 'perspective(160px) rotateX(720deg) scale(1.35)',
+          filter: 'blur(0.5px)',
+          offset: 0.75,
+        },
+        {
+          transform: 'perspective(160px) rotateX(720deg) scale(1)',
+          filter: 'blur(0px)',
+        },
       ],
-      { duration: 450, easing: 'cubic-bezier(0.17, 0.89, 0.32, 1.49)' }
+      { duration: 700, easing: 'cubic-bezier(0.17, 0.89, 0.32, 1.28)' }
     );
 
     const ring = document.createElement('span');
     ring.className = 'likeParticle';
     ring.style.cssText =
-      'width:10px;height:10px;margin:-5px 0 0 -5px;background:transparent;' +
-      `border:2px solid var(--player-like);`;
-    this.#likeButton.appendChild(ring);
+      'width:10px;height:10px;background:transparent;' +
+      'border:2px solid var(--player-like);';
+    this.#heartWrap.appendChild(ring);
     ring
       .animate(
         [
@@ -561,7 +940,7 @@ class AudioPlayer extends HTMLElement {
       const particle = document.createElement('span');
       particle.className = 'likeParticle';
       particle.style.background = color;
-      this.#likeButton.appendChild(particle);
+      this.#heartWrap.appendChild(particle);
 
       const angle = (i / all.length) * 2 * Math.PI - Math.PI / 2;
       const distance = 22 + (i % 2) * 8;

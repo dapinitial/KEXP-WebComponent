@@ -240,6 +240,69 @@ test('dispatches like-changed with track and device details', async ({ page }) =
   expect(detail.deviceId).toMatch(/^[0-9a-f-]{36}$/);
 });
 
+test('hamburger flips to the playlist and back', async ({ page }) => {
+  const player = page.locator('audio-player');
+  const like = player.locator('.likeButton');
+
+  await expect(like).toBeEnabled();
+  await like.click();
+
+  await player.locator('.menuButton').click();
+  await expect(player.locator('.flipCard')).toHaveClass(/flipped/);
+  await expect(player.locator('.cardBack')).toHaveJSProperty('inert', false);
+  await expect(player.locator('.cardFront')).toHaveJSProperty('inert', true);
+  await expect(player.locator('.playlist li')).toHaveText(/Mudhoney — Touch Me I'm Sick/);
+
+  await player.locator('.flipBackButton').click();
+  await expect(player.locator('.flipCard')).not.toHaveClass(/flipped/);
+  await expect(player.locator('.cardFront')).toHaveJSProperty('inert', false);
+  await expect(player.locator('.cardBack')).toHaveJSProperty('inert', true);
+});
+
+test('removing a song asks for confirmation first', async ({ page }) => {
+  const player = page.locator('audio-player');
+  const like = player.locator('.likeButton');
+
+  await expect(like).toBeEnabled();
+  await like.click();
+  await player.locator('.menuButton').click();
+
+  const row = player.locator('.playlist li');
+  await row.locator('.removeButton').click();
+  await expect(row.locator('.rowConfirm')).toBeVisible();
+
+  // Cancel keeps the song.
+  await row.locator('.confirmNo').click();
+  await expect(row.locator('.rowConfirm')).toBeHidden();
+  await expect(player.locator('.playlist li')).toHaveCount(1);
+
+  // Confirming removes it and unfills the heart.
+  await row.locator('.removeButton').click();
+  await row.locator('.confirmYes').click();
+  await expect(player.locator('.playlist li')).toHaveCount(0);
+  await expect(player.locator('.playlistEmpty')).toBeVisible();
+
+  await player.locator('.flipBackButton').click();
+  await expect(like).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('emails the playlist to the entered address', async ({ page }) => {
+  const player = page.locator('audio-player');
+  const like = player.locator('.likeButton');
+
+  await expect(like).toBeEnabled();
+  await like.click();
+  await player.locator('.menuButton').click();
+
+  await player.locator('.emailInput').fill('me@davidpuerto.com');
+  await player.locator('.emailButton').click();
+
+  const href = await player.locator('.emailLink').getAttribute('href');
+  expect(href).toContain('mailto:me%40davidpuerto.com');
+  expect(href).toContain(encodeURIComponent('Mudhoney — Touch Me I\'m Sick'));
+  expect(href).toContain(encodeURIComponent('KEXP 90.3 FM Seattle'));
+});
+
 test('clamps invalid volume values to a safe default', async ({ page }) => {
   const volumes = await page.evaluate(() => {
     const player = document.querySelector('audio-player');
