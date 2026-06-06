@@ -20,14 +20,25 @@ export class LikesBackend {
     };
   }
 
-  async addLike({ deviceId, artist, song, airdate }) {
+  async addLike({ deviceId, artist, song, airdate, album, releaseDate, thumbnail, label, comment, isLocal }) {
     // Plain insert: the unique constraint turns a duplicate into a 409, which
     // we treat as success ("already liked"). An upsert would require a SELECT
     // policy for the conflict check — we deliberately don't grant one.
     const response = await fetch(`${this.#base}/rest/v1/likes`, {
       method: 'POST',
       headers: this.#headers(),
-      body: JSON.stringify({ device_id: deviceId, artist, song, airdate }),
+      body: JSON.stringify({
+        device_id: deviceId,
+        artist,
+        song,
+        airdate,
+        album: album ?? null,
+        release_date: releaseDate ?? null,
+        thumbnail: thumbnail ?? null,
+        label: label ?? null,
+        comment: comment ?? null,
+        is_local: Boolean(isLocal),
+      }),
     });
     if (!response.ok && response.status !== 409) {
       throw new Error(`addLike failed with ${response.status}`);
@@ -38,6 +49,15 @@ export class LikesBackend {
     await this.#rpc('remove_like', { p_device: deviceId, p_artist: artist, p_song: song });
   }
 
+  async setNote({ deviceId, artist, song, note }) {
+    await this.#rpc('set_note', {
+      p_device: deviceId,
+      p_artist: artist,
+      p_song: song,
+      p_note: note ?? '',
+    });
+  }
+
   async playlist(deviceId) {
     const rows = await this.#rpc('device_playlist', { p_device: deviceId });
     return Array.isArray(rows)
@@ -45,6 +65,13 @@ export class LikesBackend {
           artist: r.artist,
           song: r.song,
           airdate: r.airdate,
+          album: r.album,
+          releaseDate: r.release_date,
+          thumbnail: r.thumbnail,
+          label: r.label,
+          comment: r.comment,
+          note: r.note,
+          isLocal: r.is_local,
           likedAt: r.liked_at,
         }))
       : [];

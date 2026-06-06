@@ -9,6 +9,14 @@ const playFixture = (overrides = {}) => ({
       artist: 'Mudhoney',
       song: 'Touch Me I\'m Sick',
       airdate: '2026-06-06T10:00:00-07:00',
+      album: 'Superfuzz Bigmuff',
+      release_date: '1988-10-01',
+      thumbnail_uri: 'https://images.test/superfuzz.jpg',
+      labels: ['Sub Pop'],
+      comment: 'The song that started it all — Sub Pop single number one era.',
+      is_local: true,
+      is_live: false,
+      is_request: false,
       ...overrides,
     },
   ],
@@ -467,6 +475,107 @@ test('no Wikipedia card when the artist has no page', async ({ page }) => {
   await player.locator('.playlist li .artistLink').hover();
   await page.waitForTimeout(400);
   await expect(player.locator('.hoverCard')).toBeHidden();
+});
+
+test('album art opens a track card with album, year, label, and DJ notes', async ({ page }) => {
+  await page.route('https://images.test/**', (route) =>
+    route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64') })
+  );
+
+  const player = page.locator('audio-player');
+  const like = player.locator('.likeButton');
+  await expect(like).toBeEnabled();
+  await like.click();
+  await player.locator('.playlistChip').click();
+
+  // Row shows the album art thumbnail.
+  await expect(player.locator('.playlist li .albumArt img')).toHaveAttribute(
+    'src',
+    'https://images.test/superfuzz.jpg'
+  );
+
+  await player.locator('.playlist li .albumArt').hover();
+
+  const card = player.locator('.hoverCard');
+  await expect(card).toBeVisible();
+  await expect(card.locator('.hoverCardTitle')).toHaveText('Mudhoney — Touch Me I\'m Sick');
+  await expect(card.locator('.hoverCardMeta')).toContainText('From “Superfuzz Bigmuff”');
+  await expect(card.locator('.hoverCardMeta')).toContainText('released 1988');
+  await expect(card.locator('.hoverCardMeta')).toContainText('on Sub Pop');
+  await expect(card.locator('.hoverCardExtract')).toContainText('Sub Pop single number one');
+  await expect(card.locator('.hoverCardBadges .badge')).toHaveText('SEATTLE LOCAL');
+});
+
+test('ellipsized playlist titles marquee on hover', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.route(API_PATTERN, (route) =>
+    route.fulfill({
+      json: playFixture({
+        artist: 'King Gizzard & The Lizard Wizard',
+        song: 'The Dripping Tap (Extended Live Rehearsal Version)',
+      }),
+    })
+  );
+  await page.reload();
+  await page.setViewportSize({ width: 420, height: 700 });
+
+  const player = page.locator('audio-player');
+  const like = player.locator('.likeButton');
+  await expect(like).toBeEnabled();
+  await like.click();
+  await player.locator('.playlistChip').click();
+
+  const title = player.locator('.playlist li .trackTitle');
+  const isScrolling = () =>
+    title
+      .locator('.trackScroll')
+      .evaluate((el) => el.getAnimations().some((a) => a.playState === 'running'));
+
+  await title.hover();
+  await expect.poll(isScrolling).toBe(true);
+  await expect(title).toHaveClass(/scrolling/);
+
+  await player.locator('.playlistTitle').hover();
+  await expect.poll(isScrolling).toBe(false);
+});
+
+test('personal notes: add, persist, and ride along in the email', async ({ page }) => {
+  const player = page.locator('audio-player');
+  const like = player.locator('.likeButton');
+  await expect(like).toBeEnabled();
+  await like.click();
+  await player.locator('.playlistChip').click();
+
+  // Add a note via the pencil.
+  await player.locator('.playlist li .noteButton').click();
+  await player.locator('.playlist li .noteInput').fill('Road trip to Tahoe, windows down');
+  await player.locator('.playlist li .noteInput').press('Enter');
+  await expect(player.locator('.playlist li .noteText')).toHaveText(
+    '“Road trip to Tahoe, windows down”'
+  );
+  await expect(player.locator('.playlist li .noteButton')).toHaveClass(/hasNote/);
+
+  // Survives a reload.
+  await page.reload();
+  await player.locator('.playlistChip').click();
+  await expect(player.locator('.playlist li .noteText')).toContainText('Road trip to Tahoe');
+
+  // And the email carries the whole story: meta, DJ notes, personal note.
+  await page.evaluate(() => {
+    document
+      .querySelector('audio-player')
+      .shadowRoot.querySelector('.emailLink')
+      .addEventListener('click', (e) => e.preventDefault());
+  });
+  await player.locator('.emailInput').fill('me@davidpuerto.com');
+  await player.locator('.emailButton').click();
+
+  const href = await player.locator('.emailLink').getAttribute('href');
+  const body = decodeURIComponent(href.split('&body=')[1]);
+  expect(body).toContain('Mudhoney — Touch Me I\'m Sick (Superfuzz Bigmuff, 1988, Sub Pop)');
+  expect(body).toContain('Seattle local');
+  expect(body).toContain('DJ: The song that started it all');
+  expect(body).toContain('Me: Road trip to Tahoe, windows down');
 });
 
 test('clamps invalid volume values to a safe default', async ({ page }) => {

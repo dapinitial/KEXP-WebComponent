@@ -194,20 +194,103 @@ sheet.replaceSync(`
 
     & li {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
+      flex-direction: column;
+      gap: 4px;
       padding: 6px 10px;
       background: rgb(255 255 255 / 4%);
       border-radius: calc(var(--player-radius) / 2);
       text-align: left;
     }
 
+    & .rowMain {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    & .noteButton.hasNote {
+      color: var(--player-accent);
+    }
+
+    & .noteText {
+      margin: 0;
+      font-size: 11px;
+      font-style: italic;
+      color: var(--player-muted);
+      cursor: pointer;
+
+      &:hover {
+        color: var(--player-text);
+      }
+    }
+
+    & .noteInput {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 5px 8px;
+      background: rgb(255 255 255 / 6%);
+      border: 1px solid rgb(255 255 255 / 12%);
+      border-radius: calc(var(--player-radius) / 2);
+      color: var(--player-text);
+      font: inherit;
+      font-size: 11px;
+
+      &::placeholder {
+        color: var(--player-muted);
+        font-style: italic;
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--player-accent);
+        outline-offset: 1px;
+      }
+    }
+
+    & .albumArt {
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: none;
+      border-radius: 6px;
+      background: rgb(255 255 255 / 8%);
+      color: var(--player-muted);
+      font-size: 13px;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      overflow: hidden;
+
+      & img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--player-accent);
+        outline-offset: 1px;
+      }
+    }
+
     & .trackTitle {
+      flex: 1;
+      min-width: 0;
       color: var(--player-text);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+
+      &.scrolling {
+        text-overflow: clip;
+      }
+
+      & .trackScroll {
+        display: inline-block;
+        white-space: nowrap;
+      }
     }
 
     & .rowConfirm {
@@ -325,10 +408,31 @@ sheet.replaceSync(`
       font-size: 13px;
     }
 
+    & .hoverCardBadges {
+      display: flex;
+      gap: 4px;
+
+      & .badge {
+        font-size: 9px;
+        letter-spacing: 0.08em;
+        padding: 2px 6px;
+        border-radius: 999px;
+        background: rgb(255 90 30 / 18%);
+        color: var(--player-accent);
+      }
+    }
+
+    & .hoverCardMeta {
+      margin: 0;
+      font-size: 11px;
+      color: var(--player-muted);
+    }
+
     & .hoverCardExtract {
       margin: 0;
       font-size: 12px;
       line-height: 1.45;
+      white-space: pre-line;
       display: -webkit-box;
       -webkit-line-clamp: 4;
       -webkit-box-orient: vertical;
@@ -644,8 +748,10 @@ template.innerHTML = `
           <img class="hoverCardImage" alt="" hidden>
           <div class="hoverCardBody">
             <strong class="hoverCardTitle"></strong>
-            <p class="hoverCardExtract"></p>
-            <a class="hoverCardLink" target="_blank" rel="noopener noreferrer" hidden>Read more on Wikipedia</a>
+            <span class="hoverCardBadges" hidden></span>
+            <p class="hoverCardMeta" hidden></p>
+            <p class="hoverCardExtract" hidden></p>
+            <a class="hoverCardLink" target="_blank" rel="noopener noreferrer" hidden></a>
           </div>
         </div>
       </section>
@@ -1102,8 +1208,31 @@ class AudioPlayer extends HTMLElement {
       const artist = track.artist || 'Unknown Artist';
       const song = track.song || 'Unknown Song';
 
+      // Album art doubles as the track-details hover target.
+      const art = document.createElement('button');
+      art.className = 'albumArt';
+      art.type = 'button';
+      art.setAttribute('aria-label', `About this play of ${song}`);
+      if (track.thumbnail) {
+        const img = document.createElement('img');
+        img.src = track.thumbnail;
+        img.alt = '';
+        img.loading = 'lazy';
+        art.appendChild(img);
+      } else {
+        art.textContent = '♪';
+      }
+      const showTrack = () => this.#showTrackCard(li, track);
+      art.addEventListener('pointerenter', showTrack);
+      art.addEventListener('focus', showTrack);
+      art.addEventListener('click', showTrack); // touch devices
+      art.addEventListener('pointerleave', () => this.#scheduleHideArtistCard());
+      art.addEventListener('blur', () => this.#scheduleHideArtistCard());
+
       const title = document.createElement('span');
       title.className = 'trackTitle';
+      const scroll = document.createElement('span');
+      scroll.className = 'trackScroll';
 
       if (artist !== 'Unknown Artist') {
         const artistButton = document.createElement('button');
@@ -1117,10 +1246,15 @@ class AudioPlayer extends HTMLElement {
         artistButton.addEventListener('click', show); // touch devices
         artistButton.addEventListener('pointerleave', () => this.#scheduleHideArtistCard());
         artistButton.addEventListener('blur', () => this.#scheduleHideArtistCard());
-        title.append(artistButton, ` — ${song}`);
+        scroll.append(artistButton, ` — ${song}`);
       } else {
-        title.textContent = `${artist} — ${song}`;
+        scroll.textContent = `${artist} — ${song}`;
       }
+      title.appendChild(scroll);
+
+      // Ellipsized titles scroll on hover so the full name is readable.
+      li.addEventListener('pointerenter', () => this.#startTitleMarquee(title, scroll));
+      li.addEventListener('pointerleave', () => this.#stopTitleMarquee(title, scroll));
 
       const youtubeLink = document.createElement('a');
       youtubeLink.className = 'youtubeLink';
@@ -1165,10 +1299,126 @@ class AudioPlayer extends HTMLElement {
       });
       confirmYes.addEventListener('click', () => this.#engine.removeLike(track.key));
 
+      // Personal note: pencil button opens an inline editor; the saved note
+      // lives under the title and is tappable to edit again.
+      const noteButton = document.createElement('button');
+      noteButton.className = `noteButton${track.note ? ' hasNote' : ''}`;
+      noteButton.type = 'button';
+      noteButton.textContent = '✎';
+      noteButton.setAttribute(
+        'aria-label',
+        track.note ? `Edit your note on ${song}` : `Add a note to ${song}`
+      );
+
+      const noteText = document.createElement('p');
+      noteText.className = 'noteText';
+      noteText.hidden = !track.note;
+      noteText.textContent = track.note ? `“${track.note}”` : '';
+
+      const noteInput = document.createElement('input');
+      noteInput.className = 'noteInput';
+      noteInput.type = 'text';
+      noteInput.placeholder = 'Why did this one get you?';
+      noteInput.hidden = true;
+
+      const openNoteEditor = () => {
+        noteInput.hidden = false;
+        noteText.hidden = true;
+        noteInput.value = track.note ?? '';
+        noteInput.focus();
+      };
+      noteButton.addEventListener('click', openNoteEditor);
+      noteText.addEventListener('click', openNoteEditor);
+
+      const saveNote = () => this.#engine.setNote(track.key, noteInput.value);
+      noteInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          saveNote(); // playlist-changed re-renders the list with fresh state
+        }
+        if (event.key === 'Escape') {
+          event.stopPropagation(); // keep the hover card open
+          noteInput.hidden = true;
+          noteText.hidden = !track.note;
+        }
+      });
+      noteInput.addEventListener('blur', () => {
+        if (!noteInput.hidden) saveNote();
+      });
+
       confirmBox.append(confirmLabel, confirmYes, confirmNo);
-      li.append(title, youtubeLink, removeButton, confirmBox);
+      const rowMain = document.createElement('div');
+      rowMain.className = 'rowMain';
+      rowMain.append(art, title, youtubeLink, noteButton, removeButton, confirmBox);
+      li.append(rowMain, noteText, noteInput);
       this.#playlistEl.appendChild(li);
     }
+  }
+
+  // Hover-marquee for ellipsized playlist titles: glide to the end and back,
+  // with a beat of rest at each edge.
+  #startTitleMarquee(title, scroll) {
+    if (this.#reducedMotion.matches) return;
+
+    const distance = scroll.scrollWidth - title.clientWidth;
+    if (distance <= 0) return;
+
+    title.classList.add('scrolling');
+    scroll.animate(
+      [
+        { transform: 'translateX(0)', offset: 0 },
+        { transform: 'translateX(0)', offset: 0.1 },
+        { transform: `translateX(${-distance - 4}px)`, offset: 0.9 },
+        { transform: `translateX(${-distance - 4}px)`, offset: 1 },
+      ],
+      {
+        duration: (distance / 30) * 1000 + 1200,
+        iterations: Infinity,
+        direction: 'alternate',
+        easing: 'linear',
+      }
+    );
+  }
+
+  #stopTitleMarquee(title, scroll) {
+    title.classList.remove('scrolling');
+    for (const animation of scroll.getAnimations()) {
+      animation.cancel();
+    }
+  }
+
+  #showTrackCard(row, track) {
+    clearTimeout(this.#hoverCardHideTimer);
+    const token = `track:${track.key}`;
+    this.#hoverCardArtist = token;
+
+    const badges = [
+      track.isLocal ? 'SEATTLE LOCAL' : null,
+      track.isLive ? 'LIVE' : null,
+      track.isRequest ? 'REQUEST' : null,
+    ].filter(Boolean);
+
+    const year = track.releaseDate ? String(track.releaseDate).slice(0, 4) : null;
+    const meta = [
+      track.album ? `From “${track.album}”` : null,
+      year ? `released ${year}` : null,
+      track.label ? `on ${track.label}` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
+    this.#populateHoverCard({
+      image: track.thumbnail,
+      title: `${track.artist} — ${track.song}`,
+      badges,
+      meta: meta || 'No album details for this play.',
+      // The DJ's own notes — and yours.
+      extract: [track.comment, track.note ? `My note: “${track.note}”` : null]
+        .filter(Boolean)
+        .join('\n'),
+      url: null,
+    });
+    this.#positionHoverCard(row);
   }
 
   async #showArtistCard(row, artist) {
@@ -1180,15 +1430,52 @@ class AudioPlayer extends HTMLElement {
     // Bail if the pointer moved on (or the card was dismissed) mid-fetch.
     if (!data || this.#hoverCardArtist !== artist) return;
 
-    const image = this.#hoverCard.querySelector('.hoverCardImage');
-    image.hidden = !data.thumbnail;
-    if (data.thumbnail) image.src = data.thumbnail;
-    this.#hoverCard.querySelector('.hoverCardTitle').textContent = data.title;
-    this.#hoverCard.querySelector('.hoverCardExtract').textContent = data.extract;
-    const link = this.#hoverCard.querySelector('.hoverCardLink');
-    link.hidden = !data.url;
-    if (data.url) link.href = data.url;
+    this.#populateHoverCard({
+      image: data.thumbnail,
+      title: data.title,
+      badges: [],
+      meta: null,
+      extract: data.extract,
+      url: data.url,
+      urlText: 'Read more on Wikipedia',
+    });
+    this.#positionHoverCard(row);
+  }
 
+  #populateHoverCard({ image, title, badges = [], meta, extract, url, urlText }) {
+    const imageEl = this.#hoverCard.querySelector('.hoverCardImage');
+    imageEl.hidden = !image;
+    if (image) imageEl.src = image;
+
+    this.#hoverCard.querySelector('.hoverCardTitle').textContent = title;
+
+    const badgesEl = this.#hoverCard.querySelector('.hoverCardBadges');
+    badgesEl.textContent = '';
+    badgesEl.hidden = badges.length === 0;
+    for (const badge of badges) {
+      const span = document.createElement('span');
+      span.className = 'badge';
+      span.textContent = badge;
+      badgesEl.appendChild(span);
+    }
+
+    const metaEl = this.#hoverCard.querySelector('.hoverCardMeta');
+    metaEl.hidden = !meta;
+    metaEl.textContent = meta ?? '';
+
+    const extractEl = this.#hoverCard.querySelector('.hoverCardExtract');
+    extractEl.hidden = !extract;
+    extractEl.textContent = extract ?? '';
+
+    const link = this.#hoverCard.querySelector('.hoverCardLink');
+    link.hidden = !url;
+    if (url) {
+      link.href = url;
+      link.textContent = urlText ?? 'Read more';
+    }
+  }
+
+  #positionHoverCard(row) {
     // Sit just below the hovered row, in the panel's scrollable coords.
     this.#hoverCard.style.top = `${row.offsetTop + row.offsetHeight + 6}px`;
     this.#hoverCard.hidden = false;
@@ -1209,9 +1496,29 @@ class AudioPlayer extends HTMLElement {
 
     if (!this.#emailInput.reportValidity()) return;
 
-    const lines = this.#engine.playlist.map((t) => `${t.artist} — ${t.song}`);
+    const lines = this.#engine.playlist.map((t) => {
+      const year = t.releaseDate ? String(t.releaseDate).slice(0, 4) : null;
+      const meta = [t.album, year, t.label].filter(Boolean).join(', ');
+      const flags = [
+        t.isLocal && 'Seattle local',
+        t.isLive && 'live on KEXP',
+        t.isRequest && 'listener request',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+
+      const parts = [`${t.artist} — ${t.song}${meta ? ` (${meta})` : ''}`];
+      if (flags) parts.push(`  ${flags}`);
+      if (t.comment) {
+        const dj = t.comment.length > 200 ? `${t.comment.slice(0, 197)}…` : t.comment;
+        parts.push(`  DJ: ${dj}`);
+      }
+      if (t.note) parts.push(`  Me: ${t.note}`);
+      return parts.join('\n');
+    });
+
     const subject = 'My KEXP liked songs';
-    const body = `${lines.join('\n')}\n\nHeard on KEXP 90.3 FM Seattle — kexp.org`;
+    const body = `${lines.join('\n\n')}\n\nHeard on KEXP 90.3 FM Seattle — kexp.org`;
 
     this.#emailLink.href =
       `mailto:${encodeURIComponent(this.#emailInput.value)}` +

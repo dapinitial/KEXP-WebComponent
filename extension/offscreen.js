@@ -43,5 +43,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     case 'remove-like':
       engine.removeLike(msg.key);
       break;
+    case 'set-note':
+      engine.setNote(msg.key, msg.note);
+      break;
   }
 });

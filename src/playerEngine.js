@@ -189,6 +189,16 @@ export class PlayerEngine extends EventTarget {
           artist: play.artist || 'Unknown Artist',
           song: play.song || 'Unknown Song',
           airdate: play.airdate,
+          // The KEXP API hands us riches — keep them for the playlist.
+          album: play.album ?? null,
+          releaseDate: play.release_date ?? null,
+          thumbnail: play.thumbnail_uri ?? null,
+          label: play.labels?.[0] ?? null,
+          comment: play.comment ?? null,
+          note: null,
+          isLocal: Boolean(play.is_local),
+          isLive: Boolean(play.is_live),
+          isRequest: Boolean(play.is_request),
           likedAt: new Date().toISOString(),
         }
       : this.#likedTracks.get(key);
@@ -204,6 +214,28 @@ export class PlayerEngine extends EventTarget {
     this.#countEpoch++; // invalidate any in-flight count fetch
     this.#setGlobalLikes(Math.max(0, this.#globalLikes + (liked ? 1 : -1)));
     this.#emitLikeChanged(liked, play);
+  }
+
+  // Attach (or clear) a personal note on a liked track.
+  setNote(key, note) {
+    const track = this.#likedTracks.get(key);
+    if (!track) return;
+
+    track.note = note?.trim() ? note.trim() : null;
+    this.#saveLikes();
+
+    if (this.#backend) {
+      this.#backend
+        .setNote({
+          deviceId: this.deviceId,
+          artist: track.artist,
+          song: track.song,
+          note: track.note,
+        })
+        .catch(() => {});
+    }
+
+    this.#emit('playlist-changed', { playlistSize: this.#likedTracks.size });
   }
 
   removeLike(key) {
