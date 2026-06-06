@@ -112,6 +112,10 @@ test('clears the error once the API recovers', async ({ page }) => {
 });
 
 test('dispatches track-changed when a new play arrives', async ({ page }) => {
+  // Let the initial fetch settle first, so the only remaining track-changed
+  // event is the one for the new track below.
+  await expect(page.locator('audio-player .marquee')).toContainText('Mudhoney');
+
   // Serve a different track than the one loaded in beforeEach.
   await page.route(API_PATTERN, (route) =>
     route.fulfill({
