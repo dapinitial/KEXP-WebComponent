@@ -1,119 +1,105 @@
-# KEXP-WebComponent 🎵
+# KEXP, everywhere I go
 
-A **Web Component** for live streaming KEXP, complete with a responsive audio player, song details, and stylish animations! This project was born out of love for KEXP and inspired by Reddit threads where folks shared challenges in live streaming the station. After reaching out to the awesome KEXP team, they gave me permission to use their API and even provided a better stream source. 💙
+I love Seattle's [KEXP 90.3 FM](https://kexp.org). I wanted to take it with me — and share it with everyone.
 
-This component makes it easy to share KEXP wherever you are and even embed it into your own projects. I’d love to see how you use it—drop me a message with your site link, and I’ll be sure to check it out. Happy listening!
-
----
-
-## 🎉 Features
-- **Live Streaming**: Enjoy KEXP’s live audio stream with a sleek, custom audio player.
-- **Real-time Song Updates**: Displays the current artist and song title using KEXP’s API.
-- **Responsive Design**: Works on all devices, with animations and styles that adapt to your screen size.
-- **Customizable**: Easily tweak the styles or functionality to fit your project.
-- **Lightweight Web Component**: Self-contained and simple to use—just drop it into your HTML!
-
----
-
-## 🚀 Installation
-
-### Using NPM
-1. Clone the repository or download the files.
-2. Install dependencies:
-3. Start the development server:
-   ```bash
-   npm install
-   npm run dev
-   ```
-4. Open your browser at http://localhost:5173 to see the component in action.
-
----
-
-## 🛠️ Usage
-
-### Embedding the Web Component
-1. Include the `audioPlayer.js` file in your project.
-2. Add the custom `audio-player` tag to your HTML:
-   ```html
-   <audio-player></audio-player>
-   ```
-3. Customize as needed! The styles and animations are scoped, so they won’t interfere with your project.
-
-## Example HTML
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>KEXP Live Player</title>
-</head>
-<body>
-  <audio-player></audio-player>
-  <script type="module" src="./audioPlayer.js"></script>
-</body>
-</html>
-```
-
-## ⚙️ Attributes
-
-| Attribute       | Default                                      | Description                                  |
-| --------------- | -------------------------------------------- | -------------------------------------------- |
-| `stream-url`    | `https://kexp.streamguys1.com/kexp160.aac`   | Audio stream source                          |
-| `volume`        | `0.5`                                        | Playback volume, clamped to `0`–`1`          |
-| `poll-interval` | `15000`                                      | Now-playing refresh interval in milliseconds |
+This is a single, dependency-free web component that streams KEXP live, shows what's
+playing right now, and lets you ❤️ the songs you don't want to forget. Drop one tag
+into any page and you've got the best radio station on earth.
 
 ```html
-<audio-player volume="0.8" poll-interval="30000"></audio-player>
+<audio-player></audio-player>
+<script type="module" src="./audioPlayer.js"></script>
 ```
 
-## 🧩 Properties & Methods
+It started after I kept seeing Reddit threads of people struggling to stream KEXP
+outside the official site. I reached out to the KEXP team — they kindly gave me
+permission to use their API and even pointed me at a better stream source. This
+project is a thank-you letter to them. If you use it, [support KEXP](https://kexp.org/donate)
+— and send me a link, I'd genuinely love to see where it ends up.
 
-- `player.play()` / `player.pause()` / `player.toggle()` — control playback programmatically
-- `player.toggleLike()` — like/unlike the current song (same as clicking the ♥)
-- `player.isPlaying` — current playback state (read-only)
-- `player.currentPlay` — the latest play object from the KEXP API (read-only)
-- `player.isLiked` — whether the current song is liked (read-only)
-- `player.playlist` — every liked track `{ artist, song, airdate, likedAt }` (read-only)
-- `player.deviceId` — stable anonymous ID for this browser (read-only)
+---
 
-## ❤️ Likes
+## The player
 
-Hit the heart in the corner of the play button to like the current song — complete
-with a Twitter-style burst animation (respecting `prefers-reduced-motion`). Likes
-persist in `localStorage` and build up a playlist you can read via `player.playlist`.
+![The player — KEXP card with equalizer bars, heart, and now-playing marquee](docs/screenshots/player.png)
 
-## 📡 Events
+One card. Press it, music plays, the bars dance. The marquee below polls KEXP's
+API for the current track and only scrolls when the title actually overflows —
+at a constant speed, no matter how long the song name is.
 
-| Event             | `detail`                     | Fired when…                       |
-| ----------------- | ---------------------------- | --------------------------------- |
-| `playing-changed` | `{ isPlaying }`              | Playback starts or stops          |
-| `track-changed`   | `{ artist, song, airdate }`  | A new song hits the airwaves      |
-| `like-changed`    | `{ liked, artist, song, airdate, deviceId, playlistSize }` | A song is liked or unliked |
-| `player-error`    | `{ message }`                | The now-playing fetch fails       |
+## Like what you hear
 
-```js
-document.querySelector('audio-player')
-  .addEventListener('track-changed', ({ detail }) => {
-    console.log(`Now playing: ${detail.artist} – ${detail.song}`);
-  });
+![The heart mid-burst — ring expanding, confetti flying](docs/screenshots/heart-burst.png)
+
+The heart sits in the card's corner. Hit it and it double-flips on its X axis
+with a motion blur while a ring and confetti burst out — the full Twitter
+treatment. Likes persist in `localStorage`, keyed to an anonymous device ID.
+
+Air breaks aren't likeable (the API reports them with no artist/song), so your
+playlist never fills up with `undefined — undefined`. Ask me how I know.
+
+## Your playlist, on the flip side
+
+![The card flipped over — liked songs, remove buttons, email form](docs/screenshots/playlist.png)
+
+The `♥ 4` chip under the player is both your like counter and a door: click it
+and the KEXP card flips over in 3D and expands into a phone-sized panel with
+every song you've liked. Remove songs (with an inline *"Remove? Yes / Cancel"* —
+no browser popups), or type any email address and send yourself the list.
+
+---
+
+## Using it
+
+```bash
+npm install
+npm run dev        # http://localhost:5173
 ```
 
-## 🎨 Customization
+### Attributes
 
-Theme it from the outside with CSS custom properties — no need to touch the component:
+| Attribute       | Default                                    | What it does                          |
+| --------------- | ------------------------------------------ | ------------------------------------- |
+| `stream-url`    | `https://kexp.streamguys1.com/kexp160.aac` | Audio stream source                   |
+| `volume`        | `0.5`                                      | Playback volume, clamped to `0`–`1`   |
+| `poll-interval` | `15000`                                    | Now-playing refresh (ms)              |
+
+### Properties & methods
+
+- `play()` / `pause()` / `toggle()` — playback control
+- `toggleLike()` — like/unlike the current song
+- `isPlaying`, `isLiked`, `currentPlay` — current state (read-only)
+- `playlist` — every liked track as `{ artist, song, airdate, likedAt }`
+- `deviceId` — stable anonymous ID for this browser
+
+### Events
+
+| Event             | `detail`                                                   |
+| ----------------- | ---------------------------------------------------------- |
+| `playing-changed` | `{ isPlaying }`                                            |
+| `track-changed`   | `{ artist, song, airdate }`                                |
+| `like-changed`    | `{ liked, artist, song, airdate, deviceId, playlistSize }` |
+| `player-error`    | `{ message }`                                              |
+
+### Theming
+
+Everything visual is a custom property — restyle it without touching the component:
 
 ```css
 audio-player {
-  --player-bg: #11001c;
-  --player-accent: #ffb703;
+  --player-accent: #ffb703;   /* equalizer bars, focus rings */
+  --player-like: #f91880;     /* the heart */
   --player-radius: 20px;
 }
 ```
 
-Available tokens: `--player-bg`, `--player-surface`, `--player-surface-hover`, `--player-accent`, `--player-text`, `--player-muted`, `--player-error`, `--player-radius`.
+Tokens: `--player-bg`, `--player-surface`, `--player-surface-hover`,
+`--player-accent`, `--player-like`, `--player-text`, `--player-muted`,
+`--player-error`, `--player-radius`.
 
-For deeper restyling, the shadow DOM exposes parts: `player`, `button`, `button-text`, `logo`, `like`, `display`, `marquee`, `error`. The heart color is `--player-like`.
+For structural styling, shadow parts are exposed: `player`, `front`, `back`,
+`button`, `button-text`, `logo`, `like`, `menu`, `menu-close`, `display`,
+`marquee`, `playlist`, `error`.
 
 ```css
 audio-player::part(button):hover {
@@ -121,41 +107,83 @@ audio-player::part(button):hover {
 }
 ```
 
-The component also respects `prefers-reduced-motion` — animations are disabled for users who ask for less movement.
-
 ---
 
-## 📂 Project Structure
+## How it's built, and why
 
-```plaintext
-src/
-├── index.html            # Example usage
-├── audioPlayer.js        # Web Component (logic + scoped styles)
-├── global.css            # Global styles for the demo page
-└── assets/               # Public assets (e.g., favicon)
-tests/
-└── audioPlayer.spec.js   # Playwright tests (chromium, firefox, webkit)
-```
+No framework, no dependencies — one custom element with shadow DOM. That wasn't
+minimalism for its own sake: the goal is *KEXP everywhere*, and a zero-dependency
+component drops unchanged into a static page, a React app, a browser extension
+popup, or a Tauri menu-bar app.
 
-## 🧪 Testing
+Some decisions worth explaining:
+
+**Render once, mutate surgically.** The DOM is built from a single `<template>`
+clone; state changes update `textContent` and attributes. An earlier version
+rebuilt everything with `innerHTML` every 15 seconds — which restarted animations
+and dropped focus mid-interaction. Never again.
+
+**Constructable Stylesheets.** Styles live in one `CSSStyleSheet` shared by every
+instance via `adoptedStyleSheets` — parsed once, not per-player.
+
+**The marquee is a Web Animations API animation, in pixels.** CSS-class marquees
+animate in percentages, so long titles scroll faster than short ones. Here the
+keyframes are computed from measured widths (`containerWidth → -textWidth`), so
+every title travels at the same px/sec. No `void offsetWidth` reflow hacks to
+restart it, either — `cancel()` and `animate()` again.
+
+**`container-type: inline-size` on the host.** The component's width follows the
+space it's *given*, not its content. Without this, a long song title silently
+widens the whole component and the marquee can never detect overflow — a bug the
+original version of this project worked around without understanding. Size
+containment fixes the cause.
+
+**The heart is a sibling, not a child.** It looks like it's inside the play
+button, but nested buttons are invalid HTML and confuse keyboard and screen-reader
+users. It's an absolutely-positioned sibling — clicks physically can't reach the
+play button underneath.
+
+**The burst centers itself with the CSS `translate` property.** Particle flight
+animates `transform`; centering lives on the separate `translate` property, so
+they compose instead of overwriting each other. (The first version was 2px
+off-center because a border made the ring's box bigger than its `width` — the
+margin-offset trick silently broke.)
+
+**The card flip respects people.** The hidden face gets the `inert` attribute —
+no ghost tab stops, nothing announced twice. Focus moves to the revealed face.
+And everything — bars, marquee, burst, flip — checks `prefers-reduced-motion`
+and sits still for users who ask for that.
+
+**Likes are local-first.** `localStorage` plus an anonymous device UUID. No
+account, no cookie banner. The `like-changed` event already carries everything a
+backend needs, so syncing to a real database is an event listener, not a rewrite.
+
+## Testing
 
 ```bash
-npm test          # Playwright auto-starts the dev server
-npm run test:ui   # Interactive UI mode
+npm test          # Playwright: chromium + firefox + webkit, auto-starts Vite
+npm run test:ui   # interactive mode
 ```
 
-## 🙌 Contributing
+Fifteen tests run against all three engines on every push, with the KEXP API
+fully mocked for determinism. The cross-browser matrix earns its keep: it caught
+a Chromium-only launch flag that macOS WebKit silently ignored but Linux WebKit
+refused to start with — invisible on my machine, fatal in CI.
 
-If you’d like to contribute:
-1. Fork this repository.
-2. Create a feature branch.
-3. Commit your changes.
-4. Push to the branch.
-5. Open a Pull Request.
+## Where this is going
 
-## 📧 Feedback
+- **Supabase backend** — global like counts and durable playlists (anonymous,
+  per-device — no logins on a radio widget)
+- **Song enrichment** — YouTube links for liked tracks, Wikipedia hover cards
+  for artists
+- **Browser extension** — Chrome/Firefox/Safari, same component, with audio that
+  survives the popup closing
+- **macOS menu-bar app** — Tauri, ~5MB, KEXP in your menu bar
+- **Live at** `davidpuerto.com/kexp`
 
-I’d love to hear your feedback or see how you’re using this! Feel free to reach out or open an issue. KEXP is a gem, and sharing it is a pleasure. 🎵
+## Thanks
 
-## 📜 License
-This project is licensed under the MIT License.
+To the KEXP team for saying yes, and for being the kind of station worth
+building shrines to. **[Donate to KEXP.](https://kexp.org/donate)**
+
+MIT licensed — take it, embed it, share it.
