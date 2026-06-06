@@ -17,6 +17,7 @@ const playFixture = (overrides = {}) => ({
       is_local: true,
       is_live: false,
       is_request: false,
+      show: 5234,
       ...overrides,
     },
   ],
@@ -42,6 +43,20 @@ test.beforeEach(async ({ page }) => {
   await page.route(STREAM_PATTERN, (route) => route.abort());
   await page.route(API_PATTERN, (route) =>
     route.fulfill({ json: playFixture() })
+  );
+  await page.route('https://api.kexp.org/v2/shows/**', (route) =>
+    route.fulfill({
+      json: { program_name: 'The Midday Show', host_names: ['Cheryl Waters'] },
+    })
+  );
+  await page.route('https://images.test/**', (route) =>
+    route.fulfill({
+      contentType: 'image/png',
+      body: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        'base64'
+      ),
+    })
   );
   await page.goto('/');
 });
@@ -576,6 +591,26 @@ test('personal notes: add, persist, and ride along in the email', async ({ page 
   expect(body).toContain('Seattle local');
   expect(body).toContain('DJ: The song that started it all');
   expect(body).toContain('Me: Road trip to Tahoe, windows down');
+});
+
+test('front face shows album art and the on-air show with host', async ({ page }) => {
+  const player = page.locator('audio-player');
+
+  await expect(player.locator('.nowArt')).toHaveAttribute(
+    'src',
+    'https://images.test/superfuzz.jpg'
+  );
+  await expect(player.locator('.showLine')).toHaveText('The Midday Show · Cheryl Waters');
+
+  // Airbreaks have no art.
+  await page.route(API_PATTERN, (route) =>
+    route.fulfill({
+      json: playFixture({ artist: null, song: null, thumbnail_uri: null, play_type: 'airbreak' }),
+    })
+  );
+  await page.reload();
+  await expect(player.locator('.marquee')).toContainText('Air break');
+  await expect(player.locator('.nowArt')).toBeHidden();
 });
 
 test('clamps invalid volume values to a safe default', async ({ page }) => {

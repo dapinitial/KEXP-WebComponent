@@ -659,6 +659,41 @@ sheet.replaceSync(`
     }
   }
 
+  .nowPlayingRow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: min(440px, 100%);
+    padding: 0 8px;
+    box-sizing: border-box;
+  }
+
+  .nowArt {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid rgb(255 255 255 / 10%);
+  }
+
+  .nowPlayingText {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .showLine {
+    margin: 0;
+    font-size: 11px;
+    color: var(--player-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .marqueeWrapper {
     overflow: hidden;
     position: relative;
@@ -757,8 +792,14 @@ template.innerHTML = `
       </section>
       </div>
       </div>
-      <div class="marqueeWrapper" part="display">
-        <div class="marquee" part="marquee" aria-live="polite">Loading now playing&hellip;</div>
+      <div class="nowPlayingRow">
+        <img class="nowArt" part="now-art" alt="" hidden>
+        <div class="nowPlayingText">
+          <div class="marqueeWrapper" part="display">
+            <div class="marquee" part="marquee" aria-live="polite">Loading now playing&hellip;</div>
+          </div>
+          <p class="showLine" part="show" hidden></p>
+        </div>
       </div>
       <button class="playlistChip" part="menu" type="button" aria-label="Show liked songs">
         <span class="chipHeart" aria-hidden="true">&hearts;</span>
@@ -802,6 +843,8 @@ class AudioPlayer extends HTMLElement {
   #emailInput;
   #emailLink;
   #likeCountEl;
+  #nowArt;
+  #showLine;
   #hoverCard;
   #hoverCardArtist = null;
   #hoverCardHideTimer = null;
@@ -840,6 +883,8 @@ class AudioPlayer extends HTMLElement {
     this.#emailInput = shadow.querySelector('.emailInput');
     this.#emailLink = shadow.querySelector('.emailLink');
     this.#likeCountEl = shadow.querySelector('.likeCount');
+    this.#nowArt = shadow.querySelector('.nowArt');
+    this.#showLine = shadow.querySelector('.showLine');
     this.#hoverCard = shadow.querySelector('.hoverCard');
 
     // Keep the card open while the pointer is over it; close when it leaves.
@@ -1042,6 +1087,12 @@ class AudioPlayer extends HTMLElement {
     );
 
     engine.addEventListener(
+      'show-changed',
+      () => this.#updateShowLine(),
+      { signal }
+    );
+
+    engine.addEventListener(
       'playlist-changed',
       (e) => {
         this.#updateLikeUI();
@@ -1082,6 +1133,8 @@ class AudioPlayer extends HTMLElement {
       this.#updateNowPlaying(play);
     }
 
+    this.#updateShowLine();
+
     const message = this.#engine.errorMessage;
     if (message) {
       this.#showError(message);
@@ -1114,8 +1167,23 @@ class AudioPlayer extends HTMLElement {
       this.#marquee.textContent = 'Air break — KEXP 90.3 FM Seattle';
     }
 
+    const art = play?.thumbnail_uri ?? null;
+    this.#nowArt.hidden = !art;
+    if (art) this.#nowArt.src = art;
+
     this.#updateMarquee();
     this.#updateLikeUI();
+  }
+
+  #updateShowLine() {
+    const show = this.#engine.currentShow;
+    const text = show?.programName
+      ? [show.programName, show.hostNames?.length ? show.hostNames.join(' & ') : null]
+          .filter(Boolean)
+          .join(' · ')
+      : '';
+    this.#showLine.hidden = !text;
+    this.#showLine.textContent = text;
   }
 
   #updateLikeUI() {

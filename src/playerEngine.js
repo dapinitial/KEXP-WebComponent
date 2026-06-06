@@ -5,6 +5,7 @@
 import { LikesBackend } from './likesBackend.js';
 
 const KEXP_API_URL = 'https://api.kexp.org/v2/plays?ordering=-airdate&limit=1';
+const KEXP_SHOWS_URL = 'https://api.kexp.org/v2/shows/';
 
 export const DEFAULT_STREAM_URL = 'https://kexp.streamguys1.com/kexp160.aac';
 export const DEFAULT_POLL_INTERVAL_MS = 15000;
@@ -51,6 +52,9 @@ export class PlayerEngine extends EventTarget {
   #globalLikes = 0;
   #countEpoch = 0;
   #reconciled = false;
+  #currentShow = null;
+  #currentShowId = null;
+  #showCache = new Map();
 
   constructor({ audio, streamUrl, volume, pollInterval } = {}) {
     super();
@@ -139,6 +143,10 @@ export class PlayerEngine extends EventTarget {
     return this.#globalLikes;
   }
 
+  get currentShow() {
+    return this.#currentShow;
+  }
+
   snapshot() {
     return {
       isPlaying: this.#isPlaying,
@@ -148,6 +156,7 @@ export class PlayerEngine extends EventTarget {
       errorMessage: this.#errorMessage,
       deviceId: this.deviceId,
       globalLikes: this.#globalLikes,
+      currentShow: this.#currentShow,
     };
   }
 
@@ -342,6 +351,7 @@ export class PlayerEngine extends EventTarget {
         this.#currentPlay = play;
         this.#emit('track-changed', { play });
         this.#refreshGlobalCount(play);
+        this.#refreshShow(play.show);
       }
     } catch (err) {
       if (err.name === 'AbortError') return;
@@ -422,6 +432,47 @@ export class PlayerEngine extends EventTarget {
     if (count === this.#globalLikes) return;
     this.#globalLikes = count;
     this.#emit('count-changed', { count });
+  }
+
+  // Which show is on air, and who's hosting — cached per show id.
+  async #refreshShow(showId) {
+    if (showId === this.#currentShowId) return;
+    this.#currentShowId = showId;
+
+    if (!showId) {
+      this.#setShow(null);
+      return;
+    }
+
+    if (this.#showCache.has(showId)) {
+      this.#setShow(this.#showCache.get(showId));
+      return;
+    }
+
+    try {
+      const response = await fetch(`${KEXP_SHOWS_URL}${showId}/`, {
+        credentials: 'omit',
+        cache: 'no-store',
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      const show = {
+        programName: data.program_name ?? null,
+        hostNames: data.host_names ?? [],
+      };
+      this.#showCache.set(showId, show);
+      // Only apply if this is still the show on air.
+      if (this.#currentShowId === showId) {
+        this.#setShow(show);
+      }
+    } catch {
+      // Show info is decorative — never break the player over it.
+    }
+  }
+
+  #setShow(show) {
+    this.#currentShow = show;
+    this.#emit('show-changed', { show });
   }
 
   #loadLikes() {

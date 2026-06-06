@@ -90,6 +90,10 @@ class RemoteEngine extends EventTarget {
     return this.#state.globalLikes ?? 0;
   }
 
+  get currentShow() {
+    return this.#state.currentShow ?? null;
+  }
+
   snapshot() {
     return this.#state;
   }
