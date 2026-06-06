@@ -11,6 +11,7 @@ const EMPTY_STATE = {
   isLiked: false,
   errorMessage: null,
   deviceId: 'remote',
+  globalLikes: 0,
 };
 
 class RemoteEngine extends EventTarget {
@@ -79,6 +80,10 @@ class RemoteEngine extends EventTarget {
 
   get deviceId() {
     return this.#state.deviceId;
+  }
+
+  get globalLikes() {
+    return this.#state.globalLikes ?? 0;
   }
 
   snapshot() {

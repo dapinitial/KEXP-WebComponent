@@ -379,6 +379,12 @@ sheet.replaceSync(`
         fill: currentColor;
       }
     }
+
+    & .likeCount {
+      font-size: 9px;
+      line-height: 1;
+      letter-spacing: 0;
+    }
   }
 
   /* Positioning anchor so the burst is centered on the heart itself. */
@@ -518,6 +524,7 @@ template.innerHTML = `
             <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
           </svg>
         </span>
+        <span class="likeCount" part="like-count" hidden>0</span>
       </button>
       </section>
       <section class="cardFace cardBack" part="back" inert>
@@ -546,7 +553,13 @@ template.innerHTML = `
 `;
 
 class AudioPlayer extends HTMLElement {
-  static observedAttributes = ['stream-url', 'volume', 'poll-interval'];
+  static observedAttributes = [
+    'stream-url',
+    'volume',
+    'poll-interval',
+    'backend-url',
+    'backend-key',
+  ];
 
   #engine;
   #ownsEngine = true;
@@ -571,6 +584,7 @@ class AudioPlayer extends HTMLElement {
   #emailForm;
   #emailInput;
   #emailLink;
+  #likeCountEl;
   #collapsedSize = null;
 
   #lifecycle = null;
@@ -605,6 +619,7 @@ class AudioPlayer extends HTMLElement {
     this.#emailForm = shadow.querySelector('.emailForm');
     this.#emailInput = shadow.querySelector('.emailInput');
     this.#emailLink = shadow.querySelector('.emailLink');
+    this.#likeCountEl = shadow.querySelector('.likeCount');
 
     // Default engine drives the audio element in our shadow DOM. Hosts like
     // the browser extension popup inject a remote engine instead.
@@ -742,6 +757,8 @@ class AudioPlayer extends HTMLElement {
       streamUrl: this.getAttribute('stream-url') ?? undefined,
       volume: this.getAttribute('volume') ?? undefined,
       pollInterval: this.getAttribute('poll-interval') ?? undefined,
+      backendUrl: this.getAttribute('backend-url') ?? undefined,
+      backendKey: this.getAttribute('backend-key') ?? undefined,
     };
   }
 
@@ -784,6 +801,24 @@ class AudioPlayer extends HTMLElement {
           this.#renderPlaylist();
         }
         this.dispatchEvent(new CustomEvent('like-changed', { detail: e.detail }));
+      },
+      { signal }
+    );
+
+    engine.addEventListener(
+      'count-changed',
+      () => this.#updateLikeCount(),
+      { signal }
+    );
+
+    engine.addEventListener(
+      'playlist-changed',
+      (e) => {
+        this.#updateLikeUI();
+        if (this.#flipCard.classList.contains('flipped')) {
+          this.#renderPlaylist();
+        }
+        this.dispatchEvent(new CustomEvent('playlist-changed', { detail: e.detail }));
       },
       { signal }
     );
@@ -864,6 +899,15 @@ class AudioPlayer extends HTMLElement {
     this.#chipCount.textContent = String(size);
     this.#playlistChip.classList.toggle('empty', size === 0);
     this.#playlistChip.setAttribute('aria-label', `Show liked songs (${size})`);
+
+    this.#updateLikeCount();
+  }
+
+  // Global like count for the current song, shown under the heart.
+  #updateLikeCount() {
+    const count = this.#engine.globalLikes ?? 0;
+    this.#likeCountEl.textContent = count > 999 ? '999+' : String(count);
+    this.#likeCountEl.hidden = count === 0;
   }
 
   #handleVisibilityChange = () => {

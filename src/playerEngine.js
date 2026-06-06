@@ -2,6 +2,8 @@
 // the like store. No DOM, no styling — so it can run inside the web component,
 // a browser-extension offscreen document, or a Tauri shell unchanged.
 
+import { LikesBackend } from './likesBackend.js';
+
 const KEXP_API_URL = 'https://api.kexp.org/v2/plays?ordering=-airdate&limit=1';
 
 export const DEFAULT_STREAM_URL = 'https://kexp.streamguys1.com/kexp160.aac';
@@ -43,6 +45,12 @@ export class PlayerEngine extends EventTarget {
   #fetchController = null;
   #likedTracks;
   #errorMessage = null;
+  #backend = null;
+  #backendUrl = null;
+  #backendKey = null;
+  #globalLikes = 0;
+  #countEpoch = 0;
+  #reconciled = false;
 
   constructor({ audio, streamUrl, volume, pollInterval } = {}) {
     super();
@@ -59,7 +67,7 @@ export class PlayerEngine extends EventTarget {
     this.#audio.addEventListener('error', () => this.#setError('Stream unavailable.'));
   }
 
-  configure({ streamUrl, volume, pollInterval } = {}) {
+  configure({ streamUrl, volume, pollInterval, backendUrl, backendKey } = {}) {
     if (streamUrl !== undefined) {
       this.#streamUrl = streamUrl || DEFAULT_STREAM_URL;
     }
@@ -73,6 +81,20 @@ export class PlayerEngine extends EventTarget {
       this.#pollInterval = normalizePollInterval(pollInterval);
       if (this.#pollingActive) {
         this.startPolling();
+      }
+    }
+    if (backendUrl !== undefined || backendKey !== undefined) {
+      const url = backendUrl ?? this.#backendUrl;
+      const key = backendKey ?? this.#backendKey;
+      if (url !== this.#backendUrl || key !== this.#backendKey) {
+        this.#backendUrl = url;
+        this.#backendKey = key;
+        this.#backend = url && key ? new LikesBackend({ url, key }) : null;
+        this.#reconciled = false;
+        if (this.#backend) {
+          this.#reconcile();
+          this.#refreshGlobalCount(this.#currentPlay);
+        }
       }
     }
   }
@@ -113,6 +135,10 @@ export class PlayerEngine extends EventTarget {
     }
   }
 
+  get globalLikes() {
+    return this.#globalLikes;
+  }
+
   snapshot() {
     return {
       isPlaying: this.#isPlaying,
@@ -121,6 +147,7 @@ export class PlayerEngine extends EventTarget {
       isLiked: this.isLiked,
       errorMessage: this.#errorMessage,
       deviceId: this.deviceId,
+      globalLikes: this.#globalLikes,
     };
   }
 
@@ -157,19 +184,25 @@ export class PlayerEngine extends EventTarget {
 
     const key = trackKey(play);
     const liked = !this.#likedTracks.has(key);
+    const entry = liked
+      ? {
+          artist: play.artist || 'Unknown Artist',
+          song: play.song || 'Unknown Song',
+          airdate: play.airdate,
+          likedAt: new Date().toISOString(),
+        }
+      : this.#likedTracks.get(key);
 
     if (liked) {
-      this.#likedTracks.set(key, {
-        artist: play.artist || 'Unknown Artist',
-        song: play.song || 'Unknown Song',
-        airdate: play.airdate,
-        likedAt: new Date().toISOString(),
-      });
+      this.#likedTracks.set(key, entry);
     } else {
       this.#likedTracks.delete(key);
     }
 
     this.#saveLikes();
+    this.#syncLike(liked, entry);
+    this.#countEpoch++; // invalidate any in-flight count fetch
+    this.#setGlobalLikes(Math.max(0, this.#globalLikes + (liked ? 1 : -1)));
     this.#emitLikeChanged(liked, play);
   }
 
@@ -179,6 +212,11 @@ export class PlayerEngine extends EventTarget {
 
     this.#likedTracks.delete(key);
     this.#saveLikes();
+    this.#syncLike(false, track);
+    if (isLikeablePlay(this.#currentPlay) && trackKey(this.#currentPlay) === key) {
+      this.#countEpoch++; // invalidate any in-flight count fetch
+      this.#setGlobalLikes(Math.max(0, this.#globalLikes - 1));
+    }
     this.#emitLikeChanged(false, track);
   }
 
@@ -271,11 +309,87 @@ export class PlayerEngine extends EventTarget {
       if (play && play.airdate !== this.#currentPlay?.airdate) {
         this.#currentPlay = play;
         this.#emit('track-changed', { play });
+        this.#refreshGlobalCount(play);
       }
     } catch (err) {
       if (err.name === 'AbortError') return;
       this.#setError('Now playing info unavailable.');
     }
+  }
+
+  // Push a like/unlike to the backend, fire-and-forget. The local store is
+  // the source of truth for this device; the backend can catch up later.
+  #syncLike(liked, track) {
+    if (!this.#backend || !track) return;
+
+    const payload = {
+      deviceId: this.deviceId,
+      artist: track.artist,
+      song: track.song,
+      airdate: track.airdate,
+    };
+    (liked ? this.#backend.addLike(payload) : this.#backend.removeLike(payload)).catch(() => {});
+  }
+
+  // Merge the device's cloud playlist with local likes: union both ways.
+  async #reconcile() {
+    if (!this.#backend || this.#reconciled) return;
+    this.#reconciled = true;
+
+    try {
+      const remote = await this.#backend.playlist(this.deviceId);
+      const remoteKeys = new Set(remote.map((t) => trackKey(t)));
+      let changed = false;
+
+      for (const track of remote) {
+        const key = trackKey(track);
+        if (!this.#likedTracks.has(key)) {
+          this.#likedTracks.set(key, track);
+          changed = true;
+        }
+      }
+
+      for (const [key, track] of this.#likedTracks) {
+        if (!remoteKeys.has(key)) {
+          this.#syncLike(true, track);
+        }
+      }
+
+      if (changed) {
+        this.#saveLikes();
+        this.#emit('playlist-changed', { playlistSize: this.#likedTracks.size });
+      }
+    } catch {
+      this.#reconciled = false; // offline — retry on next configure
+    }
+  }
+
+  async #refreshGlobalCount(play) {
+    if (!this.#backend || !isLikeablePlay(play)) {
+      this.#setGlobalLikes(0);
+      return;
+    }
+
+    const epoch = this.#countEpoch;
+    try {
+      const count = await this.#backend.songLikeCount(
+        play.artist || 'Unknown Artist',
+        play.song || 'Unknown Song'
+      );
+      // Ignore the result if the track changed — or an optimistic local
+      // update landed — while we were fetching.
+      if (epoch === this.#countEpoch && play.airdate === this.#currentPlay?.airdate) {
+        this.#setGlobalLikes(count);
+      }
+    } catch {
+      // Count is decorative — never break the player over it.
+    }
+  }
+
+  #setGlobalLikes(count) {
+    if (count === this.#globalLikes) return;
+    this.#globalLikes = count;
+    this.#emit('count-changed', { count });
   }
 
   #loadLikes() {

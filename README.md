@@ -64,6 +64,8 @@ npm run dev        # http://localhost:5173
 | `stream-url`    | `https://kexp.streamguys1.com/kexp160.aac` | Audio stream source                   |
 | `volume`        | `0.5`                                      | Playback volume, clamped to `0`–`1`   |
 | `poll-interval` | `15000`                                    | Now-playing refresh (ms)              |
+| `backend-url`   | —                                          | Supabase project URL (optional)       |
+| `backend-key`   | —                                          | Supabase publishable key (optional)   |
 
 ### Properties & methods
 
@@ -155,9 +157,27 @@ no ghost tab stops, nothing announced twice. Focus moves to the revealed face.
 And everything — bars, marquee, burst, flip — checks `prefers-reduced-motion`
 and sits still for users who ask for that.
 
-**Likes are local-first.** `localStorage` plus an anonymous device UUID. No
-account, no cookie banner. The `like-changed` event already carries everything a
-backend needs, so syncing to a real database is an event listener, not a rewrite.
+**Likes are local-first, with an optional cloud behind them.** `localStorage`
+plus an anonymous device UUID. No account, no cookie banner. Point the player at
+a Supabase project and likes also sync up — your playlist survives a cleared
+cache, every song shows its global like count under the heart, and your device's
+cloud playlist merges back in on load:
+
+```html
+<audio-player
+  backend-url="https://your-project.supabase.co"
+  backend-key="sb_publishable_...">
+</audio-player>
+```
+
+The backend is anonymous by design: the device UUID acts as a bearer capability.
+Anyone can *insert* a like; raw rows are unreachable through the API (no SELECT
+or DELETE policies — a bulk-delete attempt is a no-op), and reads/removals only
+happen through Postgres functions scoped to a single device. Global numbers are
+exposed as aggregates only. The whole client is plain `fetch` against PostgREST —
+no SDK. Schema lives in `supabase/migrations/`; run it locally with
+`supabase start`. If the backend is down or unconfigured, the player doesn't
+care — everything still works locally.
 
 ## Testing
 

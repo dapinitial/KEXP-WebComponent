@@ -317,6 +317,83 @@ test('emails the playlist to the entered address', async ({ page }) => {
   expect(href).toContain(encodeURIComponent('KEXP 90.3 FM Seattle'));
 });
 
+const BACKEND = 'https://backend.test';
+
+const routeBackend = async (page, { playlist = [], count = 0, posts = [] } = {}) => {
+  await page.route(`${BACKEND}/rest/v1/likes`, (route) => {
+    posts.push(route.request().postDataJSON());
+    route.fulfill({ status: 201, json: [] });
+  });
+  await page.route(`${BACKEND}/rest/v1/rpc/device_playlist`, (route) =>
+    route.fulfill({ json: playlist })
+  );
+  await page.route(`${BACKEND}/rest/v1/rpc/song_like_count`, (route) =>
+    route.fulfill({ json: count })
+  );
+  await page.route(`${BACKEND}/rest/v1/rpc/remove_like`, (route) => route.fulfill({ json: null }));
+};
+
+const attachBackend = (page) =>
+  page.evaluate((backend) => {
+    const player = document.querySelector('audio-player');
+    player.setAttribute('backend-url', backend);
+    player.setAttribute('backend-key', 'test-key');
+  }, BACKEND);
+
+test('shows the global like count and syncs likes to the backend', async ({ page }) => {
+  const posts = [];
+  await routeBackend(page, { count: 11, posts });
+  await attachBackend(page);
+
+  const player = page.locator('audio-player');
+  const likeCount = player.locator('.likeCount');
+
+  // Global count arrives from the backend.
+  await expect(likeCount).toHaveText('11');
+
+  // Liking bumps it optimistically and POSTs to the backend.
+  await player.locator('.likeButton').click();
+  await expect(likeCount).toHaveText('12');
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0].artist).toBe('Mudhoney');
+  expect(posts[0].song).toBe('Touch Me I\'m Sick');
+  expect(posts[0].device_id).toMatch(/^[0-9a-f-]{36}$/);
+});
+
+test('merges the device cloud playlist into local likes on startup', async ({ page }) => {
+  await routeBackend(page, {
+    playlist: [
+      {
+        artist: 'La Luz',
+        song: 'Call Me in the Day',
+        airdate: '2026-06-05T18:00:00Z',
+        liked_at: '2026-06-05T18:01:00Z',
+      },
+    ],
+  });
+  await attachBackend(page);
+
+  const player = page.locator('audio-player');
+
+  // Cloud song lands in the chip count and the playlist.
+  await expect(player.locator('.chipCount')).toHaveText('1');
+  await player.locator('.playlistChip').click();
+  await expect(player.locator('.playlist li')).toHaveText(/La Luz — Call Me in the Day/);
+});
+
+test('player works fine when the backend is unreachable', async ({ page }) => {
+  await page.route(`${BACKEND}/**`, (route) => route.abort());
+  await attachBackend(page);
+
+  const player = page.locator('audio-player');
+  await expect(player.locator('.marquee')).toContainText('Mudhoney');
+
+  // Liking still works locally; count stays hidden at 0... then optimistic +1.
+  await player.locator('.likeButton').click();
+  await expect(player.locator('.likeButton')).toHaveAttribute('aria-pressed', 'true');
+  await expect(player.locator('.errorMessage')).toBeHidden();
+});
+
 test('clamps invalid volume values to a safe default', async ({ page }) => {
   const volumes = await page.evaluate(() => {
     const player = document.querySelector('audio-player');
