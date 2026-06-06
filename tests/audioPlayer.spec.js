@@ -89,10 +89,11 @@ test('shows an error when the API fails but keeps the player usable', async ({ p
 });
 
 test('clears the error once the API recovers', async ({ page }) => {
-  let requestCount = 0;
+  // Fail every request until the test explicitly flips the API healthy —
+  // robust against browsers issuing extra requests around reloads.
+  let apiHealthy = false;
   await page.route(API_PATTERN, (route) => {
-    requestCount += 1;
-    if (requestCount === 1) {
+    if (!apiHealthy) {
       return route.fulfill({ status: 500, json: { error: 'oops' } });
     }
     return route.fulfill({ json: playFixture() });
@@ -102,10 +103,11 @@ test('clears the error once the API recovers', async ({ page }) => {
   const player = page.locator('audio-player');
   await expect(player.locator('.errorMessage')).toBeVisible();
 
-  // Speed up polling so recovery happens within the test.
+  // Speed up polling, then let the API recover.
   await page.evaluate(() =>
     document.querySelector('audio-player').setAttribute('poll-interval', '200')
   );
+  apiHealthy = true;
 
   await expect(player.locator('.errorMessage')).toBeHidden();
   await expect(player.locator('.marquee')).toContainText('Mudhoney');
