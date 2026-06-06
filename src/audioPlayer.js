@@ -1,13 +1,14 @@
-const KEXP_API_URL = 'https://api.kexp.org/v2/plays?ordering=-airdate&limit=1';
+import {
+  PlayerEngine,
+  isLikeablePlay,
+  DEFAULT_STREAM_URL,
+  DEFAULT_POLL_INTERVAL_MS,
+  DEFAULT_VOLUME,
+} from './playerEngine.js';
 
-const DEFAULT_STREAM_URL = 'https://kexp.streamguys1.com/kexp160.aac';
-const DEFAULT_POLL_INTERVAL_MS = 15000;
-const DEFAULT_VOLUME = 0.5;
 const MARQUEE_SPEED_PX_PER_S = 50;
 const RESIZE_DEBOUNCE_MS = 100;
 
-const STORAGE_LIKES_KEY = 'kexp-player:likes';
-const STORAGE_DEVICE_KEY = 'kexp-player:device-id';
 const LIKE_BURST_COLORS = [
   '#f91880',
   '#ffd400',
@@ -547,14 +548,16 @@ template.innerHTML = `
 class AudioPlayer extends HTMLElement {
   static observedAttributes = ['stream-url', 'volume', 'poll-interval'];
 
-  #audio;
+  #engine;
+  #ownsEngine = true;
+  #engineAbort = null;
+
   #button;
   #buttonText;
   #iconBars;
   #marquee;
   #marqueeWrapper;
   #errorEl;
-
   #likeButton;
   #heartWrap;
   #flipCard;
@@ -570,13 +573,6 @@ class AudioPlayer extends HTMLElement {
   #emailLink;
   #collapsedSize = null;
 
-  #currentPlay = null;
-  #likedTracks = new Map();
-  #isPlaying = false;
-  #isTransitioning = false;
-  #audioInitialized = false;
-  #pollTimer = null;
-  #fetchController = null;
   #lifecycle = null;
   #resizeObserver = null;
   #marqueeAnimation = null;
@@ -590,7 +586,6 @@ class AudioPlayer extends HTMLElement {
     shadow.adoptedStyleSheets = [sheet];
     shadow.appendChild(template.content.cloneNode(true));
 
-    this.#audio = shadow.querySelector('#audioPlayer');
     this.#button = shadow.querySelector('.playPauseButton');
     this.#buttonText = shadow.querySelector('.buttonText');
     this.#iconBars = shadow.querySelector('.iconBars');
@@ -611,7 +606,11 @@ class AudioPlayer extends HTMLElement {
     this.#emailInput = shadow.querySelector('.emailInput');
     this.#emailLink = shadow.querySelector('.emailLink');
 
-    this.#likedTracks = this.#loadLikes();
+    // Default engine drives the audio element in our shadow DOM. Hosts like
+    // the browser extension popup inject a remote engine instead.
+    this.#engine = new PlayerEngine({ audio: shadow.querySelector('#audioPlayer') });
+    this.#ownsEngine = true;
+    this.#attachEngine();
 
     // Shadow-internal listeners share the element's lifetime — no cleanup needed.
     this.#button.addEventListener('click', () => this.toggle());
@@ -625,10 +624,7 @@ class AudioPlayer extends HTMLElement {
     this.#flipBackButton.addEventListener('click', () => this.#setFlipped(false));
     this.#emailForm.addEventListener('submit', (event) => this.#emailPlaylist(event));
 
-    this.#updateLikeUI();
-    this.#audio.addEventListener('play', () => this.#setPlaying(true));
-    this.#audio.addEventListener('pause', () => this.#setPlaying(false));
-    this.#audio.addEventListener('error', () => this.#showError('Stream unavailable.'));
+    this.#syncFromEngine();
   }
 
   connectedCallback() {
@@ -645,42 +641,52 @@ class AudioPlayer extends HTMLElement {
     });
     this.#resizeObserver.observe(this.#marqueeWrapper);
 
-    this.#startPolling();
+    this.#engine.configure(this.#attributeConfig());
+    this.#engine.startPolling();
   }
 
   disconnectedCallback() {
     this.#lifecycle?.abort();
     this.#lifecycle = null;
 
-    this.#stopPolling();
-    this.#fetchController?.abort();
     this.#resizeObserver?.disconnect();
     this.#resizeObserver = null;
     clearTimeout(this.#marqueeDebounceTimer);
     this.#marqueeAnimation?.cancel();
     this.#marqueeAnimation = null;
 
-    // Release the stream connection; it will be re-established on next play.
-    this.#audio.pause();
-    this.#audio.removeAttribute('src');
-    this.#audio.load();
-    this.#audioInitialized = false;
+    // A remote engine (extension offscreen document) keeps playing on its own;
+    // only an engine we own should be torn down with the element.
+    if (this.#ownsEngine) {
+      this.#engine.dispose();
+    }
   }
 
   attributeChangedCallback(name, oldValue, newValue) {
     if (oldValue === newValue) return;
+    this.#engine.configure(this.#attributeConfig());
+  }
 
-    if (name === 'volume' && this.#audioInitialized) {
-      this.#audio.volume = this.volume;
+  get engine() {
+    return this.#engine;
+  }
+
+  set engine(next) {
+    if (!next || next === this.#engine) return;
+
+    this.#detachEngine();
+    if (this.#ownsEngine) {
+      this.#engine.dispose();
     }
 
-    if (name === 'poll-interval' && this.isConnected) {
-      this.#startPolling();
-    }
+    this.#engine = next;
+    this.#ownsEngine = false;
+    this.#attachEngine();
+    this.#syncFromEngine();
   }
 
   get isPlaying() {
-    return this.#isPlaying;
+    return this.#engine.isPlaying;
   }
 
   get streamUrl() {
@@ -700,101 +706,177 @@ class AudioPlayer extends HTMLElement {
   }
 
   get currentPlay() {
-    return this.#currentPlay;
+    return this.#engine.currentPlay;
   }
 
   get isLiked() {
-    return Boolean(this.#currentPlay) && this.#likedTracks.has(this.#trackKey(this.#currentPlay));
+    return this.#engine.isLiked;
   }
 
   get playlist() {
-    return [...this.#likedTracks.values()];
+    return this.#engine.playlist;
   }
 
-  // Stable anonymous identity for this browser — the future backend key.
   get deviceId() {
-    try {
-      let id = localStorage.getItem(STORAGE_DEVICE_KEY);
-      if (!id) {
-        id = crypto.randomUUID();
-        localStorage.setItem(STORAGE_DEVICE_KEY, id);
-      }
-      return id;
-    } catch {
-      return 'ephemeral';
-    }
+    return this.#engine.deviceId;
   }
 
   play() {
-    this.#initAudio();
-
-    if (this.#isTransitioning || !this.#audio.paused) return;
-    this.#isTransitioning = true;
-
-    Promise.resolve(this.#audio.play())
-      .then(() => this.#clearError())
-      .catch(() => this.#showError('Unable to play audio.'))
-      .finally(() => {
-        this.#isTransitioning = false;
-      });
+    this.#engine.play();
   }
 
   pause() {
-    if (this.#isTransitioning) return;
-    this.#audio.pause();
+    this.#engine.pause();
   }
 
   toggle() {
-    if (this.#isPlaying) {
-      this.pause();
-    } else {
-      this.play();
-    }
+    this.#engine.toggle();
   }
 
   toggleLike() {
-    const play = this.#currentPlay;
-    if (!this.#isLikeablePlay(play)) return;
+    this.#engine.toggleLike();
+  }
 
-    const key = this.#trackKey(play);
-    const liked = !this.#likedTracks.has(key);
+  #attributeConfig() {
+    return {
+      streamUrl: this.getAttribute('stream-url') ?? undefined,
+      volume: this.getAttribute('volume') ?? undefined,
+      pollInterval: this.getAttribute('poll-interval') ?? undefined,
+    };
+  }
 
-    if (liked) {
-      this.#likedTracks.set(key, {
-        artist: play.artist || 'Unknown Artist',
-        song: play.song || 'Unknown Song',
-        airdate: play.airdate,
-        likedAt: new Date().toISOString(),
-      });
-      this.#burstHearts();
-    } else {
-      this.#likedTracks.delete(key);
-    }
+  #attachEngine() {
+    this.#engineAbort = new AbortController();
+    const { signal } = this.#engineAbort;
+    const engine = this.#engine;
 
-    this.#saveLikes();
-    this.#updateLikeUI();
-    this.dispatchEvent(
-      new CustomEvent('like-changed', {
-        detail: {
-          liked,
-          artist: play.artist,
-          song: play.song,
-          airdate: play.airdate,
-          deviceId: this.deviceId,
-          playlistSize: this.#likedTracks.size,
-        },
-      })
+    engine.addEventListener(
+      'playing-changed',
+      (e) => {
+        this.#updatePlaybackUI();
+        this.dispatchEvent(new CustomEvent('playing-changed', { detail: e.detail }));
+      },
+      { signal }
+    );
+
+    engine.addEventListener(
+      'track-changed',
+      (e) => {
+        const { play } = e.detail;
+        this.#updateNowPlaying(play);
+        this.dispatchEvent(
+          new CustomEvent('track-changed', {
+            detail: { artist: play.artist, song: play.song, airdate: play.airdate },
+          })
+        );
+      },
+      { signal }
+    );
+
+    engine.addEventListener(
+      'like-changed',
+      (e) => {
+        if (e.detail.liked) {
+          this.#burstHearts();
+        }
+        this.#updateLikeUI();
+        if (this.#flipCard.classList.contains('flipped')) {
+          this.#renderPlaylist();
+        }
+        this.dispatchEvent(new CustomEvent('like-changed', { detail: e.detail }));
+      },
+      { signal }
+    );
+
+    engine.addEventListener(
+      'error-changed',
+      (e) => {
+        const { message } = e.detail;
+        if (message) {
+          this.#showError(message);
+          this.dispatchEvent(new CustomEvent('player-error', { detail: { message } }));
+        } else {
+          this.#clearError();
+        }
+      },
+      { signal }
     );
   }
 
-  #trackKey(play) {
-    return `${play.artist}|${play.song}`;
+  #detachEngine() {
+    this.#engineAbort?.abort();
+    this.#engineAbort = null;
   }
 
-  // Airbreaks (and anything else without artist/song) aren't likeable.
-  #isLikeablePlay(play) {
-    return Boolean(play && (play.artist || play.song));
+  #syncFromEngine() {
+    this.#updatePlaybackUI();
+    this.#updateLikeUI();
+
+    const play = this.#engine.currentPlay;
+    if (play) {
+      this.#updateNowPlaying(play);
+    }
+
+    const message = this.#engine.errorMessage;
+    if (message) {
+      this.#showError(message);
+    } else {
+      this.#clearError();
+    }
+
+    if (this.#flipCard.classList.contains('flipped')) {
+      this.#renderPlaylist();
+    }
   }
+
+  #updatePlaybackUI() {
+    const playing = this.#engine.isPlaying;
+    this.#buttonText.textContent = playing ? 'PAUSE' : 'PLAY';
+    this.#button.setAttribute('aria-pressed', String(playing));
+    this.#button.setAttribute(
+      'aria-label',
+      playing ? 'Pause KEXP live stream' : 'Play KEXP live stream'
+    );
+    this.#iconBars.classList.toggle('animating', playing);
+  }
+
+  #updateNowPlaying(play) {
+    if (isLikeablePlay(play)) {
+      const artist = play.artist || 'Unknown Artist';
+      const song = play.song || 'Unknown Song';
+      this.#marquee.textContent = `Listening to: ${artist} - ${song} on 90.3 FM Seattle`;
+    } else {
+      this.#marquee.textContent = 'Air break — KEXP 90.3 FM Seattle';
+    }
+
+    this.#updateMarquee();
+    this.#updateLikeUI();
+  }
+
+  #updateLikeUI() {
+    const liked = this.#engine.isLiked;
+    this.#likeButton.disabled = !isLikeablePlay(this.#engine.currentPlay);
+    this.#likeButton.classList.toggle('liked', liked);
+    this.#likeButton.setAttribute('aria-pressed', String(liked));
+    this.#likeButton.setAttribute('aria-label', liked ? 'Unlike this song' : 'Like this song');
+
+    const size = this.#engine.playlist.length;
+    this.#chipCount.textContent = String(size);
+    this.#playlistChip.classList.toggle('empty', size === 0);
+    this.#playlistChip.setAttribute('aria-label', `Show liked songs (${size})`);
+  }
+
+  #handleVisibilityChange = () => {
+    // Only pause polling for an engine tied to this document — a remote
+    // engine polls in its own context regardless of our visibility.
+    if (!this.#ownsEngine) return;
+
+    if (document.hidden) {
+      this.#engine.stopPolling();
+    } else {
+      this.#engine.startPolling();
+    }
+  };
 
   #setFlipped(flipped) {
     const card = this.#flipCard;
@@ -843,10 +925,10 @@ class AudioPlayer extends HTMLElement {
 
   #renderPlaylist() {
     this.#playlistEl.textContent = '';
-    const entries = [...this.#likedTracks.entries()];
+    const entries = this.#engine.playlist;
     this.#playlistEmpty.hidden = entries.length > 0;
 
-    for (const [key, track] of entries) {
+    for (const track of entries) {
       const li = document.createElement('li');
 
       const title = document.createElement('span');
@@ -886,7 +968,7 @@ class AudioPlayer extends HTMLElement {
         removeButton.hidden = false;
         removeButton.focus();
       });
-      confirmYes.addEventListener('click', () => this.#removeFromPlaylist(key));
+      confirmYes.addEventListener('click', () => this.#engine.removeLike(track.key));
 
       confirmBox.append(confirmLabel, confirmYes, confirmNo);
       li.append(title, removeButton, confirmBox);
@@ -894,34 +976,12 @@ class AudioPlayer extends HTMLElement {
     }
   }
 
-  #removeFromPlaylist(key) {
-    const track = this.#likedTracks.get(key);
-    if (!track) return;
-
-    this.#likedTracks.delete(key);
-    this.#saveLikes();
-    this.#updateLikeUI();
-    this.#renderPlaylist();
-    this.dispatchEvent(
-      new CustomEvent('like-changed', {
-        detail: {
-          liked: false,
-          artist: track.artist,
-          song: track.song,
-          airdate: track.airdate,
-          deviceId: this.deviceId,
-          playlistSize: this.#likedTracks.size,
-        },
-      })
-    );
-  }
-
   #emailPlaylist(event) {
     event.preventDefault();
 
     if (!this.#emailInput.reportValidity()) return;
 
-    const lines = this.playlist.map((t) => `${t.artist} — ${t.song}`);
+    const lines = this.#engine.playlist.map((t) => `${t.artist} — ${t.song}`);
     const subject = 'My KEXP liked songs';
     const body = `${lines.join('\n')}\n\nHeard on KEXP 90.3 FM Seattle — kexp.org`;
 
@@ -929,37 +989,6 @@ class AudioPlayer extends HTMLElement {
       `mailto:${encodeURIComponent(this.#emailInput.value)}` +
       `?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     this.#emailLink.click();
-  }
-
-  #loadLikes() {
-    try {
-      const entries = JSON.parse(localStorage.getItem(STORAGE_LIKES_KEY) ?? '[]');
-      // Drop malformed entries (e.g., airbreaks liked before they were blocked).
-      return new Map(entries.filter(([, t]) => t && (t.artist || t.song)));
-    } catch {
-      return new Map();
-    }
-  }
-
-  #saveLikes() {
-    try {
-      localStorage.setItem(STORAGE_LIKES_KEY, JSON.stringify([...this.#likedTracks]));
-    } catch {
-      // Private browsing / storage denied — likes stay in memory for the session.
-    }
-  }
-
-  #updateLikeUI() {
-    const liked = this.isLiked;
-    this.#likeButton.disabled = !this.#isLikeablePlay(this.#currentPlay);
-    this.#likeButton.classList.toggle('liked', liked);
-    this.#likeButton.setAttribute('aria-pressed', String(liked));
-    this.#likeButton.setAttribute('aria-label', liked ? 'Unlike this song' : 'Like this song');
-
-    const size = this.#likedTracks.size;
-    this.#chipCount.textContent = String(size);
-    this.#playlistChip.classList.toggle('empty', size === 0);
-    this.#playlistChip.setAttribute('aria-label', `Show liked songs (${size})`);
   }
 
   // Twitter-style burst: the heart double-flips on the X axis with motion
@@ -1030,108 +1059,6 @@ class AudioPlayer extends HTMLElement {
         )
         .finished.then(() => particle.remove(), () => particle.remove());
     });
-  }
-
-  #initAudio() {
-    if (this.#audioInitialized) return;
-
-    this.#audio.src = this.streamUrl;
-    this.#audio.volume = this.volume;
-    this.#audio.load();
-    this.#audioInitialized = true;
-  }
-
-  #setPlaying(playing) {
-    if (this.#isPlaying === playing) return;
-    this.#isPlaying = playing;
-    this.#updatePlaybackUI();
-    this.dispatchEvent(new CustomEvent('playing-changed', { detail: { isPlaying: playing } }));
-  }
-
-  #updatePlaybackUI() {
-    this.#buttonText.textContent = this.#isPlaying ? 'PAUSE' : 'PLAY';
-    this.#button.setAttribute('aria-pressed', String(this.#isPlaying));
-    this.#button.setAttribute(
-      'aria-label',
-      this.#isPlaying ? 'Pause KEXP live stream' : 'Play KEXP live stream'
-    );
-    this.#iconBars.classList.toggle('animating', this.#isPlaying);
-  }
-
-  #handleVisibilityChange = () => {
-    if (document.hidden) {
-      this.#stopPolling();
-    } else {
-      this.#startPolling();
-    }
-  };
-
-  #startPolling() {
-    this.#stopPolling();
-
-    const poll = async () => {
-      await this.#fetchNowPlaying();
-      this.#pollTimer = setTimeout(poll, this.pollInterval);
-    };
-
-    poll();
-  }
-
-  #stopPolling() {
-    clearTimeout(this.#pollTimer);
-    this.#pollTimer = null;
-  }
-
-  async #fetchNowPlaying() {
-    this.#fetchController?.abort();
-    const controller = new AbortController();
-    this.#fetchController = controller;
-
-    try {
-      const response = await fetch(KEXP_API_URL, {
-        credentials: 'omit',
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`KEXP API responded with ${response.status}`);
-      }
-
-      const data = await response.json();
-      const play = data.results?.[0];
-
-      this.#clearError();
-
-      if (play && play.airdate !== this.#currentPlay?.airdate) {
-        this.#currentPlay = play;
-        this.#updateNowPlaying();
-        this.dispatchEvent(
-          new CustomEvent('track-changed', {
-            detail: { artist: play.artist, song: play.song, airdate: play.airdate },
-          })
-        );
-      }
-    } catch (err) {
-      if (err.name === 'AbortError') return;
-      this.#showError('Now playing info unavailable.');
-      this.dispatchEvent(new CustomEvent('player-error', { detail: { message: err.message } }));
-    }
-  }
-
-  #updateNowPlaying() {
-    const play = this.#currentPlay;
-
-    if (this.#isLikeablePlay(play)) {
-      const artist = play.artist || 'Unknown Artist';
-      const song = play.song || 'Unknown Song';
-      this.#marquee.textContent = `Listening to: ${artist} - ${song} on 90.3 FM Seattle`;
-    } else {
-      this.#marquee.textContent = 'Air break — KEXP 90.3 FM Seattle';
-    }
-
-    this.#updateMarquee();
-    this.#updateLikeUI();
   }
 
   // Web Animations API marquee: pixel-accurate, constant speed regardless of

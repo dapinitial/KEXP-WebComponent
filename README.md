@@ -170,14 +170,34 @@ fully mocked for determinism. The cross-browser matrix earns its keep: it caught
 a Chromium-only launch flag that macOS WebKit silently ignored but Linux WebKit
 refused to start with — invisible on my machine, fatal in CI.
 
+## The browser extension
+
+KEXP in your toolbar. The component splits into an **engine** (`playerEngine.js` —
+stream, polling, likes; no DOM) and a **shell** (the visual component). On the
+web they're fused. In the extension, the engine lives in a Chrome **offscreen
+document** so the stream survives the popup closing — the popup is just a
+remote control speaking `chrome.runtime` messages, hosting the exact same
+`<audio-player>` with a proxy engine injected:
+
+```js
+document.querySelector('audio-player').engine = new RemoteEngine(state);
+```
+
+Your liked-song count rides along as the toolbar badge.
+
+```bash
+npm run build:extension
+# then chrome://extensions → Developer mode → Load unpacked → dist-extension/
+```
+
 ## Where this is going
 
+- **Firefox & Safari** versions of the extension (Firefox: sidebar audio host;
+  Safari: `safari-web-extension-converter`)
 - **Supabase backend** — global like counts and durable playlists (anonymous,
   per-device — no logins on a radio widget)
 - **Song enrichment** — YouTube links for liked tracks, Wikipedia hover cards
   for artists
-- **Browser extension** — Chrome/Firefox/Safari, same component, with audio that
-  survives the popup closing
 - **macOS menu-bar app** — Tauri, ~5MB, KEXP in your menu bar
 - **Live at** `davidpuerto.com/kexp`
 
