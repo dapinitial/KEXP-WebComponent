@@ -5,6 +5,7 @@ import {
   DEFAULT_POLL_INTERVAL_MS,
   DEFAULT_VOLUME,
 } from './playerEngine.js';
+import { artistSummary, youtubeSearchUrl } from './wikipedia.js';
 
 const MARQUEE_SPEED_PX_PER_S = 50;
 const RESIZE_DEBOUNCE_MS = 100;
@@ -240,6 +241,108 @@ sheet.replaceSync(`
     & .confirmYes {
       color: var(--player-error);
       font-weight: 600;
+    }
+  }
+
+  .artistLink {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: var(--player-text);
+    cursor: pointer;
+    text-decoration: underline dotted rgb(255 255 255 / 35%);
+    text-underline-offset: 3px;
+
+    &:hover,
+    &:focus-visible {
+      color: var(--player-accent);
+      text-decoration-color: currentColor;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--player-accent);
+      outline-offset: 1px;
+      border-radius: 2px;
+    }
+  }
+
+  .youtubeLink {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    color: var(--player-muted);
+    text-decoration: none;
+    font-size: 10px;
+    line-height: 1;
+
+    &:hover {
+      color: var(--player-text);
+      background: rgb(255 255 255 / 8%);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--player-accent);
+      outline-offset: 1px;
+    }
+  }
+
+  /* Wikipedia hover card — one shared element, repositioned per row. */
+  .hoverCard {
+    position: absolute;
+    z-index: 2;
+    left: 14px;
+    right: 14px;
+    display: flex;
+    gap: 10px;
+    padding: 10px;
+    background: #232327;
+    border: 1px solid rgb(255 255 255 / 14%);
+    border-radius: calc(var(--player-radius) / 1.5);
+    box-shadow: 0 8px 28px rgb(0 0 0 / 55%);
+    text-align: left;
+
+    & .hoverCardImage {
+      width: 56px;
+      height: 56px;
+      object-fit: cover;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+
+    & .hoverCardBody {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    & .hoverCardTitle {
+      color: var(--player-text);
+      font-size: 13px;
+    }
+
+    & .hoverCardExtract {
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.45;
+      display: -webkit-box;
+      -webkit-line-clamp: 4;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    & .hoverCardLink {
+      color: var(--player-accent);
+      font-size: 11px;
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+      }
     }
   }
 
@@ -537,6 +640,14 @@ template.innerHTML = `
         </form>
         <a class="emailLink" hidden aria-hidden="true"></a>
         <button class="flipBackButton" part="menu-close" type="button" aria-label="Close playlist">&#10005;</button>
+        <div class="hoverCard" part="hover-card" role="tooltip" hidden>
+          <img class="hoverCardImage" alt="" hidden>
+          <div class="hoverCardBody">
+            <strong class="hoverCardTitle"></strong>
+            <p class="hoverCardExtract"></p>
+            <a class="hoverCardLink" target="_blank" rel="noopener noreferrer" hidden>Read more on Wikipedia</a>
+          </div>
+        </div>
       </section>
       </div>
       </div>
@@ -585,6 +696,9 @@ class AudioPlayer extends HTMLElement {
   #emailInput;
   #emailLink;
   #likeCountEl;
+  #hoverCard;
+  #hoverCardArtist = null;
+  #hoverCardHideTimer = null;
   #collapsedSize = null;
 
   #lifecycle = null;
@@ -620,6 +734,16 @@ class AudioPlayer extends HTMLElement {
     this.#emailInput = shadow.querySelector('.emailInput');
     this.#emailLink = shadow.querySelector('.emailLink');
     this.#likeCountEl = shadow.querySelector('.likeCount');
+    this.#hoverCard = shadow.querySelector('.hoverCard');
+
+    // Keep the card open while the pointer is over it; close when it leaves.
+    this.#hoverCard.addEventListener('pointerenter', () =>
+      clearTimeout(this.#hoverCardHideTimer)
+    );
+    this.#hoverCard.addEventListener('pointerleave', () => this.#scheduleHideArtistCard());
+    this.#cardBack.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') this.#hideArtistCard();
+    });
 
     // Default engine drives the audio element in our shadow DOM. Hosts like
     // the browser extension popup inject a remote engine instead.
@@ -952,6 +1076,7 @@ class AudioPlayer extends HTMLElement {
         card.style.height = `${this.#collapsedSize.height}px`;
       }
       card.classList.remove('flipped');
+      this.#hideArtistCard();
       this.#playlistChip.focus();
 
       // Once the shrink finishes, let the card size itself naturally again.
@@ -974,10 +1099,36 @@ class AudioPlayer extends HTMLElement {
 
     for (const track of entries) {
       const li = document.createElement('li');
+      const artist = track.artist || 'Unknown Artist';
+      const song = track.song || 'Unknown Song';
 
       const title = document.createElement('span');
       title.className = 'trackTitle';
-      title.textContent = `${track.artist || 'Unknown Artist'} — ${track.song || 'Unknown Song'}`;
+
+      if (artist !== 'Unknown Artist') {
+        const artistButton = document.createElement('button');
+        artistButton.className = 'artistLink';
+        artistButton.type = 'button';
+        artistButton.textContent = artist;
+        artistButton.setAttribute('aria-label', `About ${artist}`);
+        const show = () => this.#showArtistCard(li, artist);
+        artistButton.addEventListener('pointerenter', show);
+        artistButton.addEventListener('focus', show);
+        artistButton.addEventListener('click', show); // touch devices
+        artistButton.addEventListener('pointerleave', () => this.#scheduleHideArtistCard());
+        artistButton.addEventListener('blur', () => this.#scheduleHideArtistCard());
+        title.append(artistButton, ` — ${song}`);
+      } else {
+        title.textContent = `${artist} — ${song}`;
+      }
+
+      const youtubeLink = document.createElement('a');
+      youtubeLink.className = 'youtubeLink';
+      youtubeLink.href = youtubeSearchUrl(artist, song);
+      youtubeLink.target = '_blank';
+      youtubeLink.rel = 'noopener noreferrer';
+      youtubeLink.textContent = '▶';
+      youtubeLink.setAttribute('aria-label', `Find ${song} by ${artist} on YouTube`);
 
       const removeButton = document.createElement('button');
       removeButton.className = 'removeButton';
@@ -1015,9 +1166,42 @@ class AudioPlayer extends HTMLElement {
       confirmYes.addEventListener('click', () => this.#engine.removeLike(track.key));
 
       confirmBox.append(confirmLabel, confirmYes, confirmNo);
-      li.append(title, removeButton, confirmBox);
+      li.append(title, youtubeLink, removeButton, confirmBox);
       this.#playlistEl.appendChild(li);
     }
+  }
+
+  async #showArtistCard(row, artist) {
+    clearTimeout(this.#hoverCardHideTimer);
+    this.#hoverCardArtist = artist;
+
+    const data = await artistSummary(artist);
+
+    // Bail if the pointer moved on (or the card was dismissed) mid-fetch.
+    if (!data || this.#hoverCardArtist !== artist) return;
+
+    const image = this.#hoverCard.querySelector('.hoverCardImage');
+    image.hidden = !data.thumbnail;
+    if (data.thumbnail) image.src = data.thumbnail;
+    this.#hoverCard.querySelector('.hoverCardTitle').textContent = data.title;
+    this.#hoverCard.querySelector('.hoverCardExtract').textContent = data.extract;
+    const link = this.#hoverCard.querySelector('.hoverCardLink');
+    link.hidden = !data.url;
+    if (data.url) link.href = data.url;
+
+    // Sit just below the hovered row, in the panel's scrollable coords.
+    this.#hoverCard.style.top = `${row.offsetTop + row.offsetHeight + 6}px`;
+    this.#hoverCard.hidden = false;
+  }
+
+  #scheduleHideArtistCard() {
+    clearTimeout(this.#hoverCardHideTimer);
+    this.#hoverCardHideTimer = setTimeout(() => this.#hideArtistCard(), 200);
+  }
+
+  #hideArtistCard() {
+    this.#hoverCardArtist = null;
+    this.#hoverCard.hidden = true;
   }
 
   #emailPlaylist(event) {

@@ -308,6 +308,15 @@ test('emails the playlist to the entered address', async ({ page }) => {
   await like.click();
   await player.locator('.playlistChip').click();
 
+  // Block the mailto: navigation — otherwise the headless browser hands the
+  // protocol to macOS and Mail.app pops open on every test run.
+  await page.evaluate(() => {
+    document
+      .querySelector('audio-player')
+      .shadowRoot.querySelector('.emailLink')
+      .addEventListener('click', (e) => e.preventDefault());
+  });
+
   await player.locator('.emailInput').fill('me@davidpuerto.com');
   await player.locator('.emailButton').click();
 
@@ -392,6 +401,72 @@ test('player works fine when the backend is unreachable', async ({ page }) => {
   await player.locator('.likeButton').click();
   await expect(player.locator('.likeButton')).toHaveAttribute('aria-pressed', 'true');
   await expect(player.locator('.errorMessage')).toBeHidden();
+});
+
+test('playlist rows link to a YouTube search for the song', async ({ page }) => {
+  const player = page.locator('audio-player');
+  const like = player.locator('.likeButton');
+
+  await expect(like).toBeEnabled();
+  await like.click();
+  await player.locator('.playlistChip').click();
+
+  const youtube = player.locator('.playlist li .youtubeLink');
+  await expect(youtube).toHaveAttribute(
+    'href',
+    `https://www.youtube.com/results?search_query=${encodeURIComponent("Mudhoney Touch Me I'm Sick")}`
+  );
+  await expect(youtube).toHaveAttribute('target', '_blank');
+});
+
+test('hovering an artist shows a Wikipedia card', async ({ page }) => {
+  await page.route('https://en.wikipedia.org/api/rest_v1/page/summary/**', (route) =>
+    route.fulfill({
+      json: {
+        title: 'Mudhoney',
+        extract: 'Mudhoney is an American rock band formed in Seattle in 1988.',
+        thumbnail: null,
+        content_urls: { desktop: { page: 'https://en.wikipedia.org/wiki/Mudhoney' } },
+      },
+    })
+  );
+
+  const player = page.locator('audio-player');
+  const like = player.locator('.likeButton');
+  await expect(like).toBeEnabled();
+  await like.click();
+  await player.locator('.playlistChip').click();
+
+  await player.locator('.playlist li .artistLink').hover();
+
+  const card = player.locator('.hoverCard');
+  await expect(card).toBeVisible();
+  await expect(card.locator('.hoverCardTitle')).toHaveText('Mudhoney');
+  await expect(card.locator('.hoverCardExtract')).toContainText('formed in Seattle');
+  await expect(card.locator('.hoverCardLink')).toHaveAttribute(
+    'href',
+    'https://en.wikipedia.org/wiki/Mudhoney'
+  );
+
+  // Card hides when the pointer leaves (after the grace delay).
+  await player.locator('.playlistTitle').hover();
+  await expect(card).toBeHidden();
+});
+
+test('no Wikipedia card when the artist has no page', async ({ page }) => {
+  await page.route('https://en.wikipedia.org/api/rest_v1/page/summary/**', (route) =>
+    route.fulfill({ status: 404, json: { title: 'Not found' } })
+  );
+
+  const player = page.locator('audio-player');
+  const like = player.locator('.likeButton');
+  await expect(like).toBeEnabled();
+  await like.click();
+  await player.locator('.playlistChip').click();
+
+  await player.locator('.playlist li .artistLink').hover();
+  await page.waitForTimeout(400);
+  await expect(player.locator('.hoverCard')).toBeHidden();
 });
 
 test('clamps invalid volume values to a safe default', async ({ page }) => {
