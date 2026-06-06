@@ -4,7 +4,8 @@ I love Seattle's [KEXP 90.3 FM](https://kexp.org). I wanted to take it with me �
 
 This is a single, dependency-free web component that streams KEXP live, shows what's
 playing right now, and lets you ❤️ the songs you don't want to forget. Drop one tag
-into any page and you've got the best radio station on earth.
+into any page — or [install it in your browser toolbar](#the-browser-extension) —
+and you've got the best radio station on earth.
 
 ```html
 <audio-player></audio-player>
@@ -172,18 +173,27 @@ refused to start with — invisible on my machine, fatal in CI.
 
 ## The browser extension
 
-KEXP in your toolbar. The component splits into an **engine** (`playerEngine.js` —
-stream, polling, likes; no DOM) and a **shell** (the visual component). On the
-web they're fused. In the extension, the engine lives in a Chrome **offscreen
-document** so the stream survives the popup closing — the popup is just a
-remote control speaking `chrome.runtime` messages, hosting the exact same
+![The extension popup — Sonic Youth live on KEXP, one song liked](docs/screenshots/extension.png)
+
+KEXP in your toolbar. Hit play, close the popup — **the music keeps going**.
+Open a popup in another window and it's already in sync: same track, same
+playing state, same playlist. (That screenshot is a real capture — Sonic Youth
+happened to be on air. Thanks, KEXP.)
+
+The trick is a split inside the component: an **engine** (`playerEngine.js` —
+stream, polling, likes; zero DOM) and a **shell** (everything visual). On a web
+page they're fused and you'd never know. In the extension, *one* engine lives in
+a Chrome **offscreen document** — browser-wide, not per-tab — and every popup is
+just a remote control speaking `chrome.runtime` messages, hosting the exact same
 `<audio-player>` with a proxy engine injected:
 
 ```js
 document.querySelector('audio-player').engine = new RemoteEngine(state);
 ```
 
-Your liked-song count rides along as the toolbar badge.
+One engine, one stream, every window in sync — and your liked-song count rides
+along as a pink badge on the toolbar icon. The whole extension is ~32 KB of
+JavaScript.
 
 ```bash
 npm run build:extension
