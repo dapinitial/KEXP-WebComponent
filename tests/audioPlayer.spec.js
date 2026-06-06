@@ -171,6 +171,12 @@ test('marquee scrolls only when the text overflows', async ({ page }) => {
   // correctly honors — emulate a user with no such preference.
   await page.emulateMedia({ reducedMotion: 'no-preference' });
 
+  // No album art: give the marquee the full row so the wide viewport fits.
+  await page.route(API_PATTERN, (route) =>
+    route.fulfill({ json: playFixture({ thumbnail_uri: null }) })
+  );
+  await page.reload();
+
   const player = page.locator('audio-player');
   const marquee = player.locator('.marquee');
 
