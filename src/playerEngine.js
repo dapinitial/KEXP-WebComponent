@@ -271,6 +271,43 @@ export class PlayerEngine extends EventTarget {
     };
 
     poll();
+    this.#backfillLegacyArt();
+  }
+
+  // Likes saved before we stored album art/metadata get a one-time backfill
+  // from KEXP's play history (artist_exact search, newest matching play wins).
+  async #backfillLegacyArt() {
+    let changed = false;
+
+    for (const track of this.#likedTracks.values()) {
+      if (track.thumbnail || track.backfilled) continue;
+
+      track.backfilled = true; // one attempt per track, ever
+      changed = true;
+
+      try {
+        const url = `https://api.kexp.org/v2/plays?artist_exact=${encodeURIComponent(track.artist)}&limit=20`;
+        const response = await fetch(url, { credentials: 'omit' });
+        if (!response.ok) continue;
+
+        const data = await response.json();
+        const match = data.results?.find((p) => p.song === track.song && p.thumbnail_uri);
+        if (match) {
+          track.thumbnail = match.thumbnail_uri;
+          track.album = track.album ?? match.album ?? null;
+          track.releaseDate = track.releaseDate ?? match.release_date ?? null;
+          track.label = track.label ?? match.labels?.[0] ?? null;
+          track.comment = track.comment ?? match.comment ?? null;
+        }
+      } catch {
+        // Offline — the flag is already set; legacy art is best-effort.
+      }
+    }
+
+    if (changed) {
+      this.#saveLikes();
+      this.#emit('playlist-changed', { playlistSize: this.#likedTracks.size });
+    }
   }
 
   stopPolling() {

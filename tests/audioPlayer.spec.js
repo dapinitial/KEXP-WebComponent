@@ -482,7 +482,7 @@ test('hovering an artist shows a Wikipedia card', async ({ page }) => {
   await expect(card).toBeHidden();
 });
 
-test('no Wikipedia card when the artist has no page', async ({ page }) => {
+test('artists without a Wikipedia page get a friendly fallback card', async ({ page }) => {
   await page.route('https://en.wikipedia.org/api/rest_v1/page/summary/**', (route) =>
     route.fulfill({ status: 404, json: { title: 'Not found' } })
   );
@@ -494,8 +494,72 @@ test('no Wikipedia card when the artist has no page', async ({ page }) => {
   await player.locator('.playlistChip').click();
 
   await player.locator('.playlist li .artistLink').hover();
-  await page.waitForTimeout(400);
-  await expect(player.locator('.hoverCard')).toBeHidden();
+
+  const card = player.locator('.hoverCard');
+  await expect(card).toBeVisible();
+  await expect(card.locator('.hoverCardTitle')).toHaveText('Mudhoney');
+  await expect(card.locator('.hoverCardMeta')).toContainText('too underground');
+});
+
+test('pencil toggles the note editor closed, saving the note', async ({ page }) => {
+  const player = page.locator('audio-player');
+  const like = player.locator('.likeButton');
+  await expect(like).toBeEnabled();
+  await like.click();
+  await player.locator('.playlistChip').click();
+
+  const pencil = player.locator('.playlist li .noteButton');
+  await pencil.click();
+  await player.locator('.playlist li .noteInput').fill('toggle me');
+  await pencil.click(); // toggle closed = save
+
+  await expect(player.locator('.playlist li .noteInput')).toBeHidden();
+  await expect(player.locator('.playlist li .noteText')).toHaveText('“toggle me”');
+});
+
+test('legacy likes without art get backfilled from KEXP play history', async ({ page }) => {
+  // A like saved before we stored album art.
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'kexp-player:likes',
+      JSON.stringify([
+        [
+          'La Luz|Call Me in the Day',
+          { artist: 'La Luz', song: 'Call Me in the Day', airdate: '2026-06-01T12:00:00Z', likedAt: '2026-06-01T12:01:00Z' },
+        ],
+      ])
+    );
+  });
+  await page.route(API_PATTERN, (route) => {
+    const url = route.request().url();
+    if (url.includes('artist_exact=La')) {
+      return route.fulfill({
+        json: {
+          results: [
+            {
+              artist: 'La Luz',
+              song: 'Call Me in the Day',
+              album: 'It\'s Alive',
+              release_date: '2013-10-15',
+              thumbnail_uri: 'https://images.test/itsalive.jpg',
+              labels: ['Hardly Art'],
+            },
+          ],
+        },
+      });
+    }
+    return route.fulfill({ json: playFixture() });
+  });
+  await page.reload();
+
+  const player = page.locator('audio-player');
+  await player.locator('.playlistChip').click();
+
+  const row = player.locator('.playlist li', { hasText: 'La Luz' });
+  await expect(row.locator('.albumArt img')).toHaveAttribute(
+    'src',
+    'https://images.test/itsalive.jpg'
+  );
 });
 
 test('album art opens a track card with album, year, label, and DJ notes', async ({ page }) => {

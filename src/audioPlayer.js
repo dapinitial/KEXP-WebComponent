@@ -1395,7 +1395,16 @@ class AudioPlayer extends HTMLElement {
         noteInput.value = track.note ?? '';
         noteInput.focus();
       };
-      noteButton.addEventListener('click', openNoteEditor);
+      // The pencil toggles: open the editor, or save-and-close it.
+      noteButton.addEventListener('pointerdown', (event) => {
+        if (!noteInput.hidden) {
+          event.preventDefault(); // beat the input's blur handler to it
+          saveNote();
+        }
+      });
+      noteButton.addEventListener('click', () => {
+        if (noteInput.hidden) openNoteEditor();
+      });
       noteText.addEventListener('click', openNoteEditor);
 
       const saveNote = () => this.#engine.setNote(track.key, noteInput.value);
@@ -1496,17 +1505,30 @@ class AudioPlayer extends HTMLElement {
     const data = await artistSummary(artist);
 
     // Bail if the pointer moved on (or the card was dismissed) mid-fetch.
-    if (!data || this.#hoverCardArtist !== artist) return;
+    if (this.#hoverCardArtist !== artist) return;
 
-    this.#populateHoverCard({
-      image: data.thumbnail,
-      title: data.title,
-      badges: [],
-      meta: null,
-      extract: data.extract,
-      url: data.url,
-      urlText: 'Read more on Wikipedia',
-    });
+    if (data) {
+      this.#populateHoverCard({
+        image: data.thumbnail,
+        title: data.title,
+        badges: [],
+        meta: null,
+        extract: data.extract,
+        url: data.url,
+        urlText: 'Read more on Wikipedia',
+      });
+    } else {
+      // A silent nothing reads as broken — say so instead. (KEXP plays deep
+      // cuts; plenty of artists haven't made it to Wikipedia yet.)
+      this.#populateHoverCard({
+        image: null,
+        title: artist,
+        badges: [],
+        meta: 'Nothing on Wikipedia for this one — too underground. 🤘',
+        extract: null,
+        url: null,
+      });
+    }
     this.#positionHoverCard(row);
   }
 
