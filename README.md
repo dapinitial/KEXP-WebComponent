@@ -70,8 +70,18 @@ This component makes it easy to share KEXP wherever you are and even embed it in
 ## 🧩 Properties & Methods
 
 - `player.play()` / `player.pause()` / `player.toggle()` — control playback programmatically
+- `player.toggleLike()` — like/unlike the current song (same as clicking the ♥)
 - `player.isPlaying` — current playback state (read-only)
 - `player.currentPlay` — the latest play object from the KEXP API (read-only)
+- `player.isLiked` — whether the current song is liked (read-only)
+- `player.playlist` — every liked track `{ artist, song, airdate, likedAt }` (read-only)
+- `player.deviceId` — stable anonymous ID for this browser (read-only)
+
+## ❤️ Likes
+
+Hit the heart in the corner of the play button to like the current song — complete
+with a Twitter-style burst animation (respecting `prefers-reduced-motion`). Likes
+persist in `localStorage` and build up a playlist you can read via `player.playlist`.
 
 ## 📡 Events
 
@@ -79,6 +89,7 @@ This component makes it easy to share KEXP wherever you are and even embed it in
 | ----------------- | ---------------------------- | --------------------------------- |
 | `playing-changed` | `{ isPlaying }`              | Playback starts or stops          |
 | `track-changed`   | `{ artist, song, airdate }`  | A new song hits the airwaves      |
+| `like-changed`    | `{ liked, artist, song, airdate, deviceId, playlistSize }` | A song is liked or unliked |
 | `player-error`    | `{ message }`                | The now-playing fetch fails       |
 
 ```js
@@ -102,7 +113,7 @@ audio-player {
 
 Available tokens: `--player-bg`, `--player-surface`, `--player-surface-hover`, `--player-accent`, `--player-text`, `--player-muted`, `--player-error`, `--player-radius`.
 
-For deeper restyling, the shadow DOM exposes parts: `player`, `button`, `button-text`, `logo`, `display`, `marquee`, `error`.
+For deeper restyling, the shadow DOM exposes parts: `player`, `button`, `button-text`, `logo`, `like`, `display`, `marquee`, `error`. The heart color is `--player-like`.
 
 ```css
 audio-player::part(button):hover {

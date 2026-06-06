@@ -178,6 +178,68 @@ test('respects the volume attribute', async ({ page }) => {
   expect(volume).toBeCloseTo(0.2, 2);
 });
 
+test('liking a song never triggers playback', async ({ page }) => {
+  await page.evaluate(mockAudioElement);
+
+  const player = page.locator('audio-player');
+  const like = player.locator('.likeButton');
+
+  // Heart is disabled until the first track loads.
+  await expect(like).toBeEnabled();
+  await like.click();
+
+  // Liked — but playback untouched.
+  await expect(like).toHaveAttribute('aria-pressed', 'true');
+  await expect(like).toHaveClass(/liked/);
+  await expect(player.locator('.playPauseButton')).toHaveText(/PLAY/);
+  expect(
+    await page.evaluate(() => document.querySelector('audio-player').isPlaying)
+  ).toBe(false);
+
+  // Toggle off.
+  await like.click();
+  await expect(like).toHaveAttribute('aria-pressed', 'false');
+  await expect(like).not.toHaveClass(/liked/);
+});
+
+test('likes persist across reload and build the playlist', async ({ page }) => {
+  const like = page.locator('audio-player .likeButton');
+
+  await expect(like).toBeEnabled();
+  await like.click();
+  await expect(like).toHaveAttribute('aria-pressed', 'true');
+
+  await page.reload();
+
+  // Same track is playing after reload — heart remembers.
+  await expect(like).toBeEnabled();
+  await expect(like).toHaveAttribute('aria-pressed', 'true');
+
+  const playlist = await page.evaluate(() => document.querySelector('audio-player').playlist);
+  expect(playlist).toHaveLength(1);
+  expect(playlist[0].artist).toBe('Mudhoney');
+  expect(playlist[0].song).toBe('Touch Me I\'m Sick');
+});
+
+test('dispatches like-changed with track and device details', async ({ page }) => {
+  await expect(page.locator('audio-player .likeButton')).toBeEnabled();
+
+  const detail = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const player = document.querySelector('audio-player');
+        player.addEventListener('like-changed', (e) => resolve(e.detail), { once: true });
+        player.shadowRoot.querySelector('.likeButton').click();
+      })
+  );
+
+  expect(detail.liked).toBe(true);
+  expect(detail.artist).toBe('Mudhoney');
+  expect(detail.song).toBe('Touch Me I\'m Sick');
+  expect(detail.playlistSize).toBe(1);
+  expect(detail.deviceId).toMatch(/^[0-9a-f-]{36}$/);
+});
+
 test('clamps invalid volume values to a safe default', async ({ page }) => {
   const volumes = await page.evaluate(() => {
     const player = document.querySelector('audio-player');

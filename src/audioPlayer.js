@@ -6,6 +6,18 @@ const DEFAULT_VOLUME = 0.5;
 const MARQUEE_SPEED_PX_PER_S = 50;
 const RESIZE_DEBOUNCE_MS = 100;
 
+const STORAGE_LIKES_KEY = 'kexp-player:likes';
+const STORAGE_DEVICE_KEY = 'kexp-player:device-id';
+const LIKE_BURST_COLORS = [
+  '#f91880',
+  '#ffd400',
+  '#7856ff',
+  '#00ba7c',
+  '#ff7a00',
+  '#1d9bf0',
+  '#f4212e',
+];
+
 // One stylesheet, parsed once, shared across every <audio-player> instance.
 const sheet = new CSSStyleSheet();
 sheet.replaceSync(`
@@ -18,6 +30,7 @@ sheet.replaceSync(`
     --player-text: #f5f5f5;
     --player-muted: #9a9a9f;
     --player-error: #ff8a80;
+    --player-like: #f91880;
     --player-radius: 12px;
 
     --bar-size: 50px;
@@ -87,6 +100,71 @@ sheet.replaceSync(`
     background: rgb(255 138 128 / 10%);
     border-radius: calc(var(--player-radius) / 2);
     padding: 4px 10px;
+  }
+
+  /* The heart lives visually inside the play button but is a SIBLING in the
+     DOM — nested buttons are invalid HTML and break keyboard/AT semantics. */
+  .buttonStack {
+    position: relative;
+  }
+
+  .likeButton {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: grid;
+    place-items: center;
+    padding: 4px;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    color: var(--player-muted);
+    transition: color 0.2s ease, transform 0.15s ease;
+
+    & svg {
+      display: block;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+    }
+
+    &:hover:not(:disabled) {
+      color: var(--player-like);
+    }
+
+    &:active:not(:disabled) {
+      transform: scale(0.9);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--player-like);
+      outline-offset: 2px;
+    }
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    &.liked {
+      color: var(--player-like);
+
+      & svg {
+        fill: currentColor;
+      }
+    }
+  }
+
+  .likeParticle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 5px;
+    height: 5px;
+    margin: -2.5px 0 0 -2.5px;
+    border-radius: 50%;
+    pointer-events: none;
   }
 
   .kexpLogo {
@@ -175,6 +253,7 @@ template.innerHTML = `
   <div class="audioPlayer" part="player">
     <audio id="audioPlayer" preload="none" hidden></audio>
     <div class="playerContainer">
+      <div class="buttonStack">
       <button class="playPauseButton" part="button" type="button" aria-pressed="false" aria-label="Play KEXP live stream">
         <span class="kexpLogo" part="logo">
           <span class="iconBars" aria-hidden="true">
@@ -192,6 +271,12 @@ template.innerHTML = `
         </span>
         <span class="buttonText" part="button-text">PLAY</span>
       </button>
+      <button class="likeButton" part="like" type="button" aria-pressed="false" aria-label="Like this song" disabled>
+        <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
+        </svg>
+      </button>
+      </div>
       <div class="marqueeWrapper" part="display">
         <div class="marquee" part="marquee" aria-live="polite">Loading now playing&hellip;</div>
       </div>
@@ -211,7 +296,10 @@ class AudioPlayer extends HTMLElement {
   #marqueeWrapper;
   #errorEl;
 
+  #likeButton;
+
   #currentPlay = null;
+  #likedTracks = new Map();
   #isPlaying = false;
   #isTransitioning = false;
   #audioInitialized = false;
@@ -237,9 +325,18 @@ class AudioPlayer extends HTMLElement {
     this.#marquee = shadow.querySelector('.marquee');
     this.#marqueeWrapper = shadow.querySelector('.marqueeWrapper');
     this.#errorEl = shadow.querySelector('.errorMessage');
+    this.#likeButton = shadow.querySelector('.likeButton');
+
+    this.#likedTracks = this.#loadLikes();
 
     // Shadow-internal listeners share the element's lifetime — no cleanup needed.
     this.#button.addEventListener('click', () => this.toggle());
+    this.#likeButton.addEventListener('click', (event) => {
+      // The heart is a sibling overlay, so this can't reach the play button —
+      // stopPropagation is belt-and-suspenders.
+      event.stopPropagation();
+      this.toggleLike();
+    });
     this.#audio.addEventListener('play', () => this.#setPlaying(true));
     this.#audio.addEventListener('pause', () => this.#setPlaying(false));
     this.#audio.addEventListener('error', () => this.#showError('Stream unavailable.'));
@@ -317,6 +414,28 @@ class AudioPlayer extends HTMLElement {
     return this.#currentPlay;
   }
 
+  get isLiked() {
+    return Boolean(this.#currentPlay) && this.#likedTracks.has(this.#trackKey(this.#currentPlay));
+  }
+
+  get playlist() {
+    return [...this.#likedTracks.values()];
+  }
+
+  // Stable anonymous identity for this browser — the future backend key.
+  get deviceId() {
+    try {
+      let id = localStorage.getItem(STORAGE_DEVICE_KEY);
+      if (!id) {
+        id = crypto.randomUUID();
+        localStorage.setItem(STORAGE_DEVICE_KEY, id);
+      }
+      return id;
+    } catch {
+      return 'ephemeral';
+    }
+  }
+
   play() {
     this.#initAudio();
 
@@ -342,6 +461,123 @@ class AudioPlayer extends HTMLElement {
     } else {
       this.play();
     }
+  }
+
+  toggleLike() {
+    const play = this.#currentPlay;
+    if (!play) return;
+
+    const key = this.#trackKey(play);
+    const liked = !this.#likedTracks.has(key);
+
+    if (liked) {
+      this.#likedTracks.set(key, {
+        artist: play.artist,
+        song: play.song,
+        airdate: play.airdate,
+        likedAt: new Date().toISOString(),
+      });
+      this.#burstHearts();
+    } else {
+      this.#likedTracks.delete(key);
+    }
+
+    this.#saveLikes();
+    this.#updateLikeUI();
+    this.dispatchEvent(
+      new CustomEvent('like-changed', {
+        detail: {
+          liked,
+          artist: play.artist,
+          song: play.song,
+          airdate: play.airdate,
+          deviceId: this.deviceId,
+          playlistSize: this.#likedTracks.size,
+        },
+      })
+    );
+  }
+
+  #trackKey(play) {
+    return `${play.artist}|${play.song}`;
+  }
+
+  #loadLikes() {
+    try {
+      return new Map(JSON.parse(localStorage.getItem(STORAGE_LIKES_KEY) ?? '[]'));
+    } catch {
+      return new Map();
+    }
+  }
+
+  #saveLikes() {
+    try {
+      localStorage.setItem(STORAGE_LIKES_KEY, JSON.stringify([...this.#likedTracks]));
+    } catch {
+      // Private browsing / storage denied — likes stay in memory for the session.
+    }
+  }
+
+  #updateLikeUI() {
+    const liked = this.isLiked;
+    this.#likeButton.disabled = !this.#currentPlay;
+    this.#likeButton.classList.toggle('liked', liked);
+    this.#likeButton.setAttribute('aria-pressed', String(liked));
+    this.#likeButton.setAttribute('aria-label', liked ? 'Unlike this song' : 'Like this song');
+  }
+
+  // Twitter-style burst: heart pops with an overshoot bounce while a ring
+  // expands and confetti particles fly outward. Pure WAAPI, self-cleaning.
+  #burstHearts() {
+    if (this.#reducedMotion.matches) return;
+
+    const heart = this.#likeButton.querySelector('svg');
+    heart.animate(
+      [
+        { transform: 'scale(0)' },
+        { transform: 'scale(1.35)', offset: 0.6 },
+        { transform: 'scale(1)' },
+      ],
+      { duration: 450, easing: 'cubic-bezier(0.17, 0.89, 0.32, 1.49)' }
+    );
+
+    const ring = document.createElement('span');
+    ring.className = 'likeParticle';
+    ring.style.cssText =
+      'width:10px;height:10px;margin:-5px 0 0 -5px;background:transparent;' +
+      `border:2px solid var(--player-like);`;
+    this.#likeButton.appendChild(ring);
+    ring
+      .animate(
+        [
+          { transform: 'scale(0.3)', opacity: 1 },
+          { transform: 'scale(3.5)', opacity: 0 },
+        ],
+        { duration: 500, easing: 'ease-out' }
+      )
+      .finished.then(() => ring.remove(), () => ring.remove());
+
+    LIKE_BURST_COLORS.forEach((color, i, all) => {
+      const particle = document.createElement('span');
+      particle.className = 'likeParticle';
+      particle.style.background = color;
+      this.#likeButton.appendChild(particle);
+
+      const angle = (i / all.length) * 2 * Math.PI - Math.PI / 2;
+      const distance = 22 + (i % 2) * 8;
+      const x = Math.cos(angle) * distance;
+      const y = Math.sin(angle) * distance;
+
+      particle
+        .animate(
+          [
+            { transform: 'translate(0, 0) scale(1)', opacity: 1 },
+            { transform: `translate(${x}px, ${y}px) scale(0.2)`, opacity: 0 },
+          ],
+          { duration: 600, easing: 'cubic-bezier(0.16, 0.8, 0.4, 1)' }
+        )
+        .finished.then(() => particle.remove(), () => particle.remove());
+    });
   }
 
   #initAudio() {
@@ -436,6 +672,7 @@ class AudioPlayer extends HTMLElement {
     const song = this.#currentPlay?.song || 'Unknown Song';
     this.#marquee.textContent = `Listening to: ${artist} - ${song} on 90.3 FM Seattle`;
     this.#updateMarquee();
+    this.#updateLikeUI();
   }
 
   // Web Animations API marquee: pixel-accurate, constant speed regardless of
