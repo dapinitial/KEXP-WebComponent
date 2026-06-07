@@ -40,6 +40,9 @@ const mockAudioElement = () => {
 };
 
 test.beforeEach(async ({ page }) => {
+  // index.html ships wired to the PRODUCTION backend — wall it off so test
+  // fixtures never sync into the real database. (Ask me how I know.)
+  await page.route('https://jodgbwwnbrotuceanghk.supabase.co/**', (route) => route.abort());
   await page.route(STREAM_PATTERN, (route) => route.abort());
   await page.route(API_PATTERN, (route) =>
     route.fulfill({ json: playFixture() })
