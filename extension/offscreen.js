@@ -3,8 +3,10 @@
 // remote controls speaking chrome.runtime messages.
 
 import { PlayerEngine } from '../src/playerEngine.js';
+import { BACKEND_URL, BACKEND_KEY } from './backendConfig.js';
 
 const engine = new PlayerEngine();
+engine.configure({ backendUrl: BACKEND_URL, backendKey: BACKEND_KEY });
 engine.startPolling();
 
 const broadcast = (event, detail) => {
@@ -30,6 +32,13 @@ for (const event of [
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === 'kexp:get-state') {
     sendResponse(engine.snapshot());
+    return;
+  }
+
+  if (msg?.type === 'kexp:adopt-device-id') {
+    // The content script found the website's device-id — adopt it so the
+    // toolbar and the site share one playlist. Idempotent.
+    engine.adoptDeviceId(msg.id);
     return;
   }
 

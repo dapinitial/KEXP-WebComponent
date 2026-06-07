@@ -6,7 +6,14 @@
   "permissions": ["offscreen"],
   "host_permissions": [
     "https://api.kexp.org/*",
-    "https://kexp.streamguys1.com/*"
+    "https://kexp.streamguys1.com/*",
+    "https://jodgbwwnbrotuceanghk.supabase.co/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://davidpuerto.com/kexp*"],
+      "js": ["content-sync.js"]
+    }
   ],
   "action": {
     "default_popup": "popup.html",

@@ -20,6 +20,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true; // async response
   }
 
+  if (msg?.type === 'kexp:adopt-device-id' && !msg.forwarded) {
+    // The engine host (offscreen) might not exist yet — make sure it does,
+    // then re-send. `forwarded` stops this listener from looping; adoption
+    // itself is idempotent, so a double delivery is harmless.
+    ensureOffscreen().then(() =>
+      chrome.runtime.sendMessage({ ...msg, forwarded: true }).catch(() => {})
+    );
+    return;
+  }
+
   if (msg?.type === 'kexp:event') {
     const { state } = msg;
     const count = state.playlist?.length ?? 0;

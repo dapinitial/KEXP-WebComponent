@@ -144,6 +144,26 @@ export class PlayerEngine extends EventTarget {
     }
   }
 
+  // Adopt another context's device identity (e.g. the website's, handed over
+  // by the extension content script) so every surface shares one cloud
+  // playlist. The next reconcile pulls the adopted playlist and pushes any
+  // local-only likes up under the new id.
+  adoptDeviceId(id) {
+    if (typeof id !== 'string' || !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) {
+      return;
+    }
+    if (id === this.deviceId) return;
+    try {
+      localStorage.setItem(STORAGE_DEVICE_KEY, id);
+    } catch {
+      return;
+    }
+    this.#reconciled = false;
+    if (this.#backend) {
+      this.#reconcile();
+    }
+  }
+
   get globalLikes() {
     return this.#globalLikes;
   }

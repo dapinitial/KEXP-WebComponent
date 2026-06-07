@@ -215,6 +215,12 @@ One engine, one stream, every window in sync — and your liked-song count rides
 along as a pink badge on the toolbar icon. The whole extension is ~32 KB of
 JavaScript.
 
+The extension also syncs with the website: a tiny content script on
+`davidpuerto.com/kexp` hands the site's anonymous device-id to the extension,
+which adopts it — from then on, a heart in the toolbar and a heart on the site
+land in the same cloud playlist (and any likes you'd already collected in the
+toolbar get carried across).
+
 ```bash
 npm run build:extension
 # then chrome://extensions → Developer mode → Load unpacked → dist-extension/
@@ -240,8 +246,6 @@ npm run tauri build
 ## Where this is going
 
 - **Store listings** — Chrome Web Store and Firefox AMO
-- **Shared device identity** — the extension adopting the website's device-id,
-  so one playlist follows you everywhere
 - **Song enrichment** — YouTube links for liked tracks
 - **Live at** `davidpuerto.com/kexp`
 
