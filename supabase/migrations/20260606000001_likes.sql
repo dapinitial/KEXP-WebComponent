@@ -16,6 +16,7 @@ create table if not exists likes (
   label text,
   comment text,
   note text,
+  position int,
   is_local boolean not null default false,
   liked_at timestamptz not null default now(),
   unique (device_id, artist, song)
@@ -69,6 +70,18 @@ as $$
   from public.likes
   where device_id = p_device
   order by liked_at desc;
+$$;
+
+-- Reorder one like within its device's playlist (drag-and-drop support).
+create or replace function set_position(p_device uuid, p_artist text, p_song text, p_position int)
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  update public.likes
+  set position = p_position
+  where device_id = p_device and artist = p_artist and song = p_song;
 $$;
 
 -- Set (or clear) the personal note on one like, scoped to its device.

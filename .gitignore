@@ -28,3 +28,4 @@ dist-ssr
 
 dist-extension/
 dist-extension-firefox/
+.env
