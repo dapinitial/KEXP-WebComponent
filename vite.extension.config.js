@@ -15,6 +15,7 @@ export default defineConfig({
       input: {
         popup: resolve(__dirname, 'extension/popup.html'),
         offscreen: resolve(__dirname, 'extension/offscreen.html'),
+        'background-ff': resolve(__dirname, 'extension/background-ff.html'),
       },
     },
   },
