@@ -54,5 +54,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     case 'set-note':
       engine.setNote(msg.key, msg.note);
       break;
+    case 'reorder':
+      engine.reorder(msg.keys);
+      break;
   }
 });

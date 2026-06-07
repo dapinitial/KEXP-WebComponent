@@ -56,6 +56,10 @@ class RemoteEngine extends EventTarget {
     this.#send('set-note', { key, note });
   }
 
+  reorder(keys) {
+    this.#send('reorder', { keys });
+  }
+
   // The offscreen engine owns its own configuration and polling cadence.
   configure() {}
   startPolling() {}

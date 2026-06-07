@@ -247,6 +247,39 @@ sheet.replaceSync(`
       }
     }
 
+    & .dragHandle {
+      flex-shrink: 0;
+      padding: 2px 4px;
+      background: none;
+      border: none;
+      border-radius: 4px;
+      color: var(--player-muted);
+      font-size: 12px;
+      line-height: 1;
+      cursor: grab;
+      touch-action: none;
+
+      &:hover {
+        color: var(--player-text);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--player-accent);
+        outline-offset: 1px;
+      }
+    }
+
+    & li.dragging {
+      opacity: 0.92;
+      box-shadow: 0 6px 18px rgb(0 0 0 / 50%);
+      position: relative;
+      z-index: 1;
+
+      & .dragHandle {
+        cursor: grabbing;
+      }
+    }
+
     & .albumArt {
       flex-shrink: 0;
       width: 28px;
@@ -1267,14 +1300,32 @@ class AudioPlayer extends HTMLElement {
   }
 
   #renderPlaylist() {
+    // Never rebuild rows mid-drag (a background sync can land while the
+    // user is dragging) — the drag's own commit re-renders afterwards.
+    if (this.#playlistEl.querySelector('li.dragging')) return;
+
+    // Keep keyboard reordering usable: re-renders restore handle focus.
+    const active = this.shadowRoot.activeElement;
+    const focusKey = active?.classList?.contains('dragHandle')
+      ? active.closest('li')?.dataset.key
+      : null;
+
     this.#playlistEl.textContent = '';
     const entries = this.#engine.playlist;
     this.#playlistEmpty.hidden = entries.length > 0;
 
     for (const track of entries) {
       const li = document.createElement('li');
+      li.dataset.key = track.key;
       const artist = track.artist || 'Unknown Artist';
       const song = track.song || 'Unknown Song';
+
+      const handle = document.createElement('button');
+      handle.className = 'dragHandle';
+      handle.type = 'button';
+      handle.textContent = '⠿';
+      handle.setAttribute('aria-label', `Reorder ${song} — drag, or use arrow keys`);
+      this.#wireDragHandle(handle, li);
 
       // Album art doubles as the track-details hover target.
       const art = document.createElement('button');
@@ -1440,10 +1491,77 @@ class AudioPlayer extends HTMLElement {
       confirmBox.append(confirmLabel, confirmYes, confirmNo);
       const rowMain = document.createElement('div');
       rowMain.className = 'rowMain';
-      rowMain.append(art, title, youtubeLink, noteButton, removeButton, confirmBox);
+      rowMain.append(handle, art, title, youtubeLink, noteButton, removeButton, confirmBox);
       li.append(rowMain, noteText, noteInput);
       this.#playlistEl.appendChild(li);
     }
+
+    if (focusKey) {
+      this.shadowRoot
+        .querySelector(`li[data-key="${CSS.escape(focusKey)}"] .dragHandle`)
+        ?.focus();
+    }
+  }
+
+  // Pointer dragging (mouse + touch via pointer capture) and arrow-key
+  // reordering share one commit path: read the DOM order, tell the engine.
+  #wireDragHandle(handle, li) {
+    handle.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+      event.preventDefault();
+
+      if (event.key === 'ArrowUp' && li.previousElementSibling) {
+        this.#playlistEl.insertBefore(li, li.previousElementSibling);
+      } else if (event.key === 'ArrowDown' && li.nextElementSibling) {
+        this.#playlistEl.insertBefore(li.nextElementSibling, li);
+      } else {
+        return;
+      }
+      this.#commitPlaylistOrder();
+    });
+
+    handle.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      // Capture is best-effort (WebKit is picky); the document-level
+      // listeners below do the real work — pointer events are composed,
+      // so they cross the shadow boundary.
+      try {
+        handle.setPointerCapture(event.pointerId);
+      } catch {
+        /* fine without it */
+      }
+      li.classList.add('dragging');
+
+      const onMove = (ev) => {
+        const others = [...this.#playlistEl.children].filter((row) => row !== li);
+        const next = others.find((row) => {
+          const rect = row.getBoundingClientRect();
+          return ev.clientY < rect.top + rect.height / 2;
+        });
+        if (next) {
+          this.#playlistEl.insertBefore(li, next);
+        } else {
+          this.#playlistEl.appendChild(li);
+        }
+      };
+
+      const onUp = () => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.removeEventListener('pointercancel', onUp);
+        li.classList.remove('dragging');
+        this.#commitPlaylistOrder();
+      };
+
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onUp);
+    });
+  }
+
+  #commitPlaylistOrder() {
+    const keys = [...this.#playlistEl.children].map((row) => row.dataset.key);
+    this.#engine.reorder(keys);
   }
 
   // Hover-marquee for ellipsized playlist titles: glide to the end and back,

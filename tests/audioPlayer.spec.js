@@ -686,6 +686,58 @@ test('front face shows album art and the on-air show with host', async ({ page }
   await expect(player.locator('.nowArt')).toBeHidden();
 });
 
+test('playlist reorders via drag and persists', async ({ page }) => {
+  await page.addInitScript(() => {
+    // Init scripts re-run on EVERY navigation — seed only once, or the
+    // final reload would wipe the positions this test just saved.
+    if (localStorage.getItem('kexp-player:seeded')) return;
+    localStorage.setItem('kexp-player:seeded', '1');
+    localStorage.setItem(
+      'kexp-player:likes',
+      JSON.stringify([
+        ['A|First Song', { artist: 'A', song: 'First Song', likedAt: '2026-06-01T10:00:00Z' }],
+        ['B|Second Song', { artist: 'B', song: 'Second Song', likedAt: '2026-06-02T10:00:00Z' }],
+        ['C|Third Song', { artist: 'C', song: 'Third Song', likedAt: '2026-06-03T10:00:00Z' }],
+      ])
+    );
+  });
+  await page.reload();
+
+  const player = page.locator('audio-player');
+  await player.locator('.playlistChip').click();
+
+  // Let the 3D flip + expansion settle — dragging a mid-animation target
+  // reads stale coordinates (WebKit is strict about this).
+  await page.waitForFunction(() => {
+    const sr = document.querySelector('audio-player').shadowRoot;
+    const moving = [
+      ...sr.querySelector('.flipCard').getAnimations(),
+      ...sr.querySelector('.flipInner').getAnimations(),
+    ];
+    return moving.length === 0;
+  });
+
+  const titles = player.locator('.playlist li .trackTitle');
+  await expect(titles).toHaveText([/First Song/, /Second Song/, /Third Song/]);
+
+  // Drag "Third Song" up between First and Second.
+  const thirdHandle = player.locator('.playlist li', { hasText: 'Third Song' }).locator('.dragHandle');
+  const secondRow = player.locator('.playlist li', { hasText: 'Second Song' });
+  const from = await thirdHandle.boundingBox();
+  const to = await secondRow.boundingBox();
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + to.width / 2, to.y + 2, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(titles).toHaveText([/First Song/, /Third Song/, /Second Song/]);
+
+  // Order survives a reload (positions persisted).
+  await page.reload();
+  await player.locator('.playlistChip').click();
+  await expect(titles).toHaveText([/First Song/, /Third Song/, /Second Song/]);
+});
+
 test('clamps invalid volume values to a safe default', async ({ page }) => {
   const volumes = await page.evaluate(() => {
     const player = document.querySelector('audio-player');

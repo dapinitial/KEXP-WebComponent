@@ -49,6 +49,15 @@ export class LikesBackend {
     await this.#rpc('remove_like', { p_device: deviceId, p_artist: artist, p_song: song });
   }
 
+  async setPosition({ deviceId, artist, song, position }) {
+    await this.#rpc('set_position', {
+      p_device: deviceId,
+      p_artist: artist,
+      p_song: song,
+      p_position: position,
+    });
+  }
+
   async setNote({ deviceId, artist, song, note }) {
     await this.#rpc('set_note', {
       p_device: deviceId,
@@ -71,6 +80,7 @@ export class LikesBackend {
           label: r.label,
           comment: r.comment,
           note: r.note,
+          position: r.position,
           isLocal: r.is_local,
           likedAt: r.liked_at,
         }))

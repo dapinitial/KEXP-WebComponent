@@ -122,7 +122,12 @@ export class PlayerEngine extends EventTarget {
   }
 
   get playlist() {
-    return [...this.#likedTracks.entries()].map(([key, track]) => ({ key, ...track }));
+    const tracks = [...this.#likedTracks.entries()].map(([key, track]) => ({ key, ...track }));
+    // Dragged order first; never-positioned tracks keep insertion order after.
+    return tracks.sort(
+      (a, b) =>
+        (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER)
+    );
   }
 
   // Stable anonymous identity for this browser — the future backend key.
@@ -223,6 +228,33 @@ export class PlayerEngine extends EventTarget {
     this.#countEpoch++; // invalidate any in-flight count fetch
     this.#setGlobalLikes(Math.max(0, this.#globalLikes + (liked ? 1 : -1)));
     this.#emitLikeChanged(liked, play);
+  }
+
+  // Persist a new visual order (array of track keys, first = top).
+  reorder(orderedKeys) {
+    let changed = false;
+
+    orderedKeys.forEach((key, index) => {
+      const track = this.#likedTracks.get(key);
+      if (track && track.position !== index) {
+        track.position = index;
+        changed = true;
+        if (this.#backend) {
+          this.#backend
+            .setPosition({
+              deviceId: this.deviceId,
+              artist: track.artist,
+              song: track.song,
+              position: index,
+            })
+            .catch(() => {});
+        }
+      }
+    });
+
+    if (!changed) return;
+    this.#saveLikes();
+    this.#emit('playlist-changed', { playlistSize: this.#likedTracks.size });
   }
 
   // Attach (or clear) a personal note on a liked track.
