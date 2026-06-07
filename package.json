@@ -8,6 +8,8 @@
     "build:site": "vite build --base=/kexp/",
     "build:extension": "vite build --config vite.extension.config.js",
     "build:extension:firefox": "npm run build:extension && rm -rf dist-extension-firefox && cp -R dist-extension dist-extension-firefox && cp extension/manifest.firefox.json dist-extension-firefox/manifest.json && rm dist-extension-firefox/background.js",
+    "build:tauri": "vite build --config vite.tauri.config.js",
+    "tauri": "tauri",
     "preview": "vite preview",
     "test": "playwright test",
     "test:ui": "playwright test --ui",
@@ -25,6 +27,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
+    "@tauri-apps/cli": "^2.11.2",
     "playwright-testing-library": "^4.5.0"
   }
 }

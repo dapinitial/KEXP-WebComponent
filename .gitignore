@@ -29,3 +29,8 @@ dist-ssr
 dist-extension/
 dist-extension-firefox/
 .env
+
+# Tauri
+dist-tauri/
+src-tauri/target/
+src-tauri/gen/schemas/

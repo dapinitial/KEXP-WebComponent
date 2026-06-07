@@ -220,15 +220,29 @@ npm run build:extension
 # then chrome://extensions → Developer mode → Load unpacked → dist-extension/
 ```
 
+## The menu-bar app
+
+KEXP in your macOS menu bar. A [Tauri](https://tauri.app) tray app: click the
+icon, the same `<audio-player>` drops down in a webview wired to the same
+hosted backend — likes from the menu bar land in the same per-device playlist
+as the website and extension. Click away and it dismisses like a real
+menu-bar dropdown; the music keeps playing (the webview outlives the window).
+
+This is the engine/shell split's easiest win: the webview *is* the host, the
+exact same component the web page uses, with zero glue code — the only native
+code is ~60 lines of Rust for the tray icon and window positioning.
+
+```bash
+npm run tauri build
+# → src-tauri/target/release/bundle/macos/KEXP.app
+```
+
 ## Where this is going
 
-- **Firefox & Safari** versions of the extension (Firefox: sidebar audio host;
-  Safari: `safari-web-extension-converter`)
-- **Supabase backend** — global like counts and durable playlists (anonymous,
-  per-device — no logins on a radio widget)
-- **Song enrichment** — YouTube links for liked tracks, Wikipedia hover cards
-  for artists
-- **macOS menu-bar app** — Tauri, ~5MB, KEXP in your menu bar
+- **Store listings** — Chrome Web Store and Firefox AMO
+- **Shared device identity** — the extension adopting the website's device-id,
+  so one playlist follows you everywhere
+- **Song enrichment** — YouTube links for liked tracks
 - **Live at** `davidpuerto.com/kexp`
 
 ## Thanks
