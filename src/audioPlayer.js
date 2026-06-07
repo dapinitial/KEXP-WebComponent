@@ -943,7 +943,9 @@ class AudioPlayer extends HTMLElement {
       event.stopPropagation();
       this.toggleLike();
     });
-    this.#playlistChip.addEventListener('click', () => this.#setFlipped(true));
+    this.#playlistChip.addEventListener('click', () =>
+      this.#setFlipped(!this.#flipCard.classList.contains('flipped'))
+    );
     this.#flipBackButton.addEventListener('click', () => this.#setFlipped(false));
     this.#emailForm.addEventListener('submit', (event) => this.#emailPlaylist(event));
 
@@ -1263,10 +1265,12 @@ class AudioPlayer extends HTMLElement {
       const rect = card.getBoundingClientRect();
       this.#collapsedSize = { width: rect.width, height: rect.height };
 
-      // Expand toward iPhone 13 dimensions (390×844), clamped to the host.
+      // Expand toward iPhone 13 dimensions (390×844), clamped to the host —
+      // leaving room for the marquee, chip, and page footer below the card,
+      // which otherwise slide off-screen on short windows.
       const host = this.getBoundingClientRect();
       const targetW = Math.max(rect.width, Math.min(390, host.width - 24));
-      const targetH = Math.max(rect.height, Math.min(844, host.height - 24));
+      const targetH = Math.max(rect.height, Math.min(844, host.height - 150));
 
       card.style.width = `${rect.width}px`;
       card.style.height = `${rect.height}px`;

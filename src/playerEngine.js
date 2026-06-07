@@ -299,7 +299,12 @@ export class PlayerEngine extends EventTarget {
 
     const poll = async () => {
       await this.#fetchNowPlaying();
-      this.#pollTimer = setTimeout(poll, this.#pollInterval);
+      // Airbreaks are short — poll faster so the heart re-enables the
+      // moment music returns.
+      const interval = isLikeablePlay(this.#currentPlay)
+        ? this.#pollInterval
+        : Math.min(5000, this.#pollInterval);
+      this.#pollTimer = setTimeout(poll, interval);
     };
 
     poll();

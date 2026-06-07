@@ -303,6 +303,24 @@ test('playlist chip flips to the playlist and back', async ({ page }) => {
   await expect(player.locator('.flipCard')).not.toHaveClass(/flipped/);
   await expect(player.locator('.cardFront')).toHaveJSProperty('inert', false);
   await expect(player.locator('.cardBack')).toHaveJSProperty('inert', true);
+
+  // Let the card finish shrinking — the chip rides up with it.
+  const settled = () =>
+    page.waitForFunction(() => {
+      const sr = document.querySelector('audio-player').shadowRoot;
+      return [
+        ...sr.querySelector('.flipCard').getAnimations(),
+        ...sr.querySelector('.flipInner').getAnimations(),
+      ].length === 0;
+    });
+  await settled();
+
+  // The chip itself toggles: open, then close.
+  await player.locator('.playlistChip').click();
+  await expect(player.locator('.flipCard')).toHaveClass(/flipped/);
+  await settled();
+  await player.locator('.playlistChip').click();
+  await expect(player.locator('.flipCard')).not.toHaveClass(/flipped/);
 });
 
 test('removing a song asks for confirmation first', async ({ page }) => {
