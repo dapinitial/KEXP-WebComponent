@@ -1395,11 +1395,27 @@ class AudioPlayer extends HTMLElement {
         noteInput.value = track.note ?? '';
         noteInput.focus();
       };
+
+      // Close immediately and optimistically — remote engines (extension)
+      // confirm via a later playlist-changed broadcast.
+      const closeNoteEditor = (save) => {
+        const value = noteInput.value.trim();
+        noteInput.hidden = true;
+        if (save) {
+          this.#engine.setNote(track.key, value);
+          noteText.textContent = value ? `“${value}”` : '';
+          noteText.hidden = !value;
+          noteButton.classList.toggle('hasNote', Boolean(value));
+        } else {
+          noteText.hidden = !track.note;
+        }
+      };
+
       // The pencil toggles: open the editor, or save-and-close it.
       noteButton.addEventListener('pointerdown', (event) => {
         if (!noteInput.hidden) {
           event.preventDefault(); // beat the input's blur handler to it
-          saveNote();
+          closeNoteEditor(true);
         }
       });
       noteButton.addEventListener('click', () => {
@@ -1407,20 +1423,18 @@ class AudioPlayer extends HTMLElement {
       });
       noteText.addEventListener('click', openNoteEditor);
 
-      const saveNote = () => this.#engine.setNote(track.key, noteInput.value);
       noteInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
           event.preventDefault();
-          saveNote(); // playlist-changed re-renders the list with fresh state
+          closeNoteEditor(true);
         }
         if (event.key === 'Escape') {
           event.stopPropagation(); // keep the hover card open
-          noteInput.hidden = true;
-          noteText.hidden = !track.note;
+          closeNoteEditor(false);
         }
       });
       noteInput.addEventListener('blur', () => {
-        if (!noteInput.hidden) saveNote();
+        if (!noteInput.hidden) closeNoteEditor(true);
       });
 
       confirmBox.append(confirmLabel, confirmYes, confirmNo);

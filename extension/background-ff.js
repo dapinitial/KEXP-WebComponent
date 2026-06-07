@@ -28,7 +28,15 @@ const broadcast = (event, detail) => {
   });
 };
 
-for (const event of ['playing-changed', 'track-changed', 'like-changed', 'error-changed']) {
+for (const event of [
+  'playing-changed',
+  'track-changed',
+  'like-changed',
+  'playlist-changed',
+  'count-changed',
+  'show-changed',
+  'error-changed',
+]) {
   engine.addEventListener(event, (e) => broadcast(event, e.detail));
 }
 
