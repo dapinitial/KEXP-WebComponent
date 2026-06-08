@@ -99,6 +99,24 @@ sheet.replaceSync(`
     backface-visibility: hidden;
   }
 
+  /* The play button (KEXP logo + EQ bars) and the action rail are detailed,
+     edge-anchored elements that distort badly under the 3D spin — and the
+     rail slides as the card resizes. Cross-fade them instead: fade OUT the
+     instant the flip starts (no delay), fade IN only after the card has
+     rotated home (delayed via the base rule below), so the spin itself shows
+     a clean, empty card. (The play button folds opacity into its own
+     transition further down so its hover effect is preserved.) */
+  .actionRail {
+    transition: opacity 0.18s ease 0.34s;
+  }
+
+  .flipCard.flipped .playPauseButton,
+  .flipCard.flipped .actionRail {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.16s ease 0s;
+  }
+
   /* Front stays in flow so the collapsed card sizes to the play button. */
   .cardFront {
     position: relative;
@@ -628,7 +646,8 @@ sheet.replaceSync(`
     border-radius: var(--player-radius);
     font: inherit;
     letter-spacing: 0.12em;
-    transition: background 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
+    transition: background 0.2s ease, transform 0.15s ease, border-color 0.2s ease,
+      opacity 0.18s ease 0.34s;
 
     &:hover {
       background: var(--player-surface-hover);
@@ -902,7 +921,8 @@ sheet.replaceSync(`
       animation: none;
     }
 
-    .playPauseButton {
+    .playPauseButton,
+    .actionRail {
       transition: none;
     }
 
