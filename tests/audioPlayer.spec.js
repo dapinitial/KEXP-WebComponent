@@ -524,11 +524,15 @@ test('playlist chip flips to the playlist and back', async ({ page }) => {
   await expect(like).toBeEnabled();
   await like.click();
 
+  // The chip reads as an action, and its label tracks what a click will do.
+  await expect(player.locator('.chipLabel')).toHaveText('View playlist');
+
   await player.locator('.playlistChip').click();
   await expect(player.locator('.flipCard')).toHaveClass(/flipped/);
   await expect(player.locator('.cardBack')).toHaveJSProperty('inert', false);
   await expect(player.locator('.cardFront')).toHaveJSProperty('inert', true);
   await expect(player.locator('.playlist li')).toHaveText(/Mudhoney — Touch Me I'm Sick/);
+  await expect(player.locator('.chipLabel')).toHaveText('Hide playlist');
 
   await player.locator('.flipBackButton').click();
   await expect(player.locator('.flipCard')).not.toHaveClass(/flipped/);

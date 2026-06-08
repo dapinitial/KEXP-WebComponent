@@ -139,8 +139,21 @@ sheet.replaceSync(`
       color: var(--player-like);
     }
 
+    & .chipLabel {
+      padding-left: 8px;
+      margin-left: 2px;
+      border-left: 1px solid rgb(255 255 255 / 14%);
+      color: var(--player-muted);
+      font-size: 0.85em;
+      letter-spacing: 0.02em;
+    }
+
     &:hover {
       background: var(--player-surface-hover);
+    }
+
+    &:hover .chipLabel {
+      color: var(--player-text);
     }
 
     &:focus-visible {
@@ -997,6 +1010,7 @@ template.innerHTML = `
       <button class="playlistChip" part="menu" type="button" aria-label="Show liked songs">
         <span class="chipHeart" aria-hidden="true">&hearts;</span>
         <span class="chipCount">0</span>
+        <span class="chipLabel" part="menu-label">View playlist</span>
       </button>
       <span class="errorMessage" part="error" role="alert" hidden></span>
     </div>
@@ -1038,6 +1052,7 @@ class AudioPlayer extends HTMLElement {
   #cardBack;
   #playlistChip;
   #chipCount;
+  #chipLabel;
   #flipBackButton;
   #playlistEl;
   #playlistEmpty;
@@ -1087,6 +1102,7 @@ class AudioPlayer extends HTMLElement {
     this.#cardBack = shadow.querySelector('.cardBack');
     this.#playlistChip = shadow.querySelector('.playlistChip');
     this.#chipCount = shadow.querySelector('.chipCount');
+    this.#chipLabel = shadow.querySelector('.chipLabel');
     this.#flipBackButton = shadow.querySelector('.flipBackButton');
     this.#playlistEl = shadow.querySelector('.playlist');
     this.#playlistEmpty = shadow.querySelector('.playlistEmpty');
@@ -1608,6 +1624,9 @@ class AudioPlayer extends HTMLElement {
     // inert fully removes the hidden face from tab order and AT.
     this.#cardFront.inert = flipped;
     this.#cardBack.inert = !flipped;
+
+    // The chip toggles the card, so its label tracks what a click will do.
+    this.#chipLabel.textContent = flipped ? 'Hide playlist' : 'View playlist';
 
     if (flipped) {
       const rect = card.getBoundingClientRect();
