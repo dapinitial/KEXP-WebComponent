@@ -767,6 +767,45 @@ test('the track card picks up MusicBrainz studio credits', async ({ page }) => {
   });
 });
 
+test('the artist card layers Last.fm tags and similar artists over the bio', async ({ page }) => {
+  await page.route('https://en.wikipedia.org/api/rest_v1/page/summary/**', (route) =>
+    route.fulfill({
+      json: {
+        title: 'Mudhoney',
+        extract: 'Mudhoney is an American rock band formed in Seattle in 1988.',
+        thumbnail: null,
+        content_urls: { desktop: { page: 'https://en.wikipedia.org/wiki/Mudhoney' } },
+      },
+    })
+  );
+  // The enrich edge function lives on the (otherwise walled-off) backend.
+  await page.route('https://jodgbwwnbrotuceanghk.supabase.co/functions/v1/enrich**', (route) =>
+    route.fulfill({
+      json: {
+        listeners: 712345,
+        tags: ['grunge', 'seattle'],
+        similar: ['TAD', 'Green River', 'Screaming Trees', 'Melvins'],
+        url: 'https://www.last.fm/music/Mudhoney',
+      },
+    })
+  );
+
+  const player = page.locator('audio-player');
+  const like = player.locator('.likeButton');
+  await expect(like).toBeEnabled();
+  await like.click();
+  await player.locator('.playlistChip').click();
+  await player.locator('.playlist li .artistLink').hover();
+
+  const card = player.locator('.hoverCard');
+  await expect(card).toBeVisible();
+  await expect(card.locator('.hoverCardExtract')).toContainText('formed in Seattle');
+  await expect(card.locator('.hoverCardBadges .badge')).toHaveText(['GRUNGE', 'SEATTLE']);
+  await expect(card.locator('.hoverCardMeta')).toContainText(
+    '712.3K listeners · Similar: TAD, Green River, Screaming Trees'
+  );
+});
+
 test('hovering an artist shows a Wikipedia card', async ({ page }) => {
   await page.route('https://en.wikipedia.org/api/rest_v1/page/summary/**', (route) =>
     route.fulfill({

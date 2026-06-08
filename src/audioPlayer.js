@@ -9,6 +9,7 @@ import { artistSummary, youtubeSearchUrl, spotifySearchUrl } from './wikipedia.j
 import { setArtwork } from './albumArt.js';
 import { exportToSpotify, hasPendingExport } from './spotify.js';
 import { recordingCredits } from './musicbrainz.js';
+import { artistEnrichment, formatListeners } from './enrich.js';
 
 const MARQUEE_SPEED_PX_PER_S = 50;
 const RESIZE_DEBOUNCE_MS = 100;
@@ -1989,6 +1990,36 @@ class AudioPlayer extends HTMLElement {
       });
     }
     this.#positionHoverCard(row);
+
+    // Last.fm enrichment (via the backend's edge function) arrives late:
+    // genre tags become badges, listeners + similar artists join the meta.
+    artistEnrichment(this.getAttribute('backend-url'), artist).then((extra) => {
+      if (!extra || this.#hoverCardArtist !== artist) return;
+
+      const badgesEl = this.#hoverCard.querySelector('.hoverCardBadges');
+      if (extra.tags?.length && badgesEl.childElementCount === 0) {
+        badgesEl.hidden = false;
+        for (const tag of extra.tags) {
+          const span = document.createElement('span');
+          span.className = 'badge';
+          span.textContent = tag.toUpperCase();
+          badgesEl.appendChild(span);
+        }
+      }
+
+      const line = [
+        formatListeners(extra.listeners),
+        extra.similar?.length ? `Similar: ${extra.similar.slice(0, 3).join(', ')}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      if (line) {
+        const metaEl = this.#hoverCard.querySelector('.hoverCardMeta');
+        metaEl.textContent = metaEl.textContent ? `${metaEl.textContent} · ${line}` : line;
+        metaEl.hidden = false;
+      }
+      this.#positionHoverCard(row);
+    });
   }
 
   #populateHoverCard({ image, title, badges = [], meta, extract, url, urlText }) {

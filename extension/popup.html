@@ -19,7 +19,12 @@
   </style>
 </head>
 <body>
-  <audio-player></audio-player>
+  <!-- backend-url feeds the shell's enrichment lookups (hover cards); the
+       engine itself lives offscreen and ignores these (RemoteEngine). -->
+  <audio-player
+    backend-url="https://jodgbwwnbrotuceanghk.supabase.co"
+    backend-key="sb_publishable_bbC4VBdlBYCn_9VAMgWp-g_qftjC2FL">
+  </audio-player>
   <script type="module" src="./popup.js"></script>
 </body>
 </html>
