@@ -21,9 +21,13 @@
 <body>
   <!-- backend-url feeds the shell's enrichment lookups (hover cards); the
        engine itself lives offscreen and ignores these (RemoteEngine). -->
+  <!-- No registered OAuth redirect of its own — the export button opens the
+       site (which has one) carrying this device's id, so the shared playlist
+       exports correctly. backend-url also feeds the hover-card enrichment. -->
   <audio-player
     backend-url="https://jodgbwwnbrotuceanghk.supabase.co"
-    backend-key="sb_publishable_bbC4VBdlBYCn_9VAMgWp-g_qftjC2FL">
+    backend-key="sb_publishable_bbC4VBdlBYCn_9VAMgWp-g_qftjC2FL"
+    spotify-export-url="https://davidpuerto.com/kexp/?export=spotify">
   </audio-player>
   <script type="module" src="./popup.js"></script>
 </body>

@@ -385,6 +385,53 @@ test('exports the playlist to Spotify through the PKCE round-trip', async ({ pag
   expect(posted).toEqual(['spotify:track:m1']);
 });
 
+test('a surface without its own OAuth delegates export to the site with its device id', async ({ page }) => {
+  // This is how the extension popup / menu bar behave: no spotify-client-id,
+  // just a spotify-export-url pointing at the site (which owns the redirect).
+  await page.evaluate(() => {
+    window.__opened = [];
+    window.open = (url) => {
+      window.__opened.push(url);
+      return null;
+    };
+    const player = document.querySelector('audio-player');
+    // Extension surfaces have no client-id of their own — only a delegate URL.
+    player.removeAttribute('spotify-client-id');
+    player.setAttribute('spotify-export-url', 'https://davidpuerto.com/kexp/?export=spotify');
+  });
+
+  const player = page.locator('audio-player');
+  await player.locator('.playlistChip').click();
+  await expect(player.locator('.spotifyExportButton')).toBeVisible();
+  await player.locator('.spotifyExportButton').click();
+
+  const opened = await page.evaluate(() => window.__opened);
+  expect(opened).toHaveLength(1);
+  expect(opened[0]).toContain('https://davidpuerto.com/kexp/?export=spotify');
+  // Carries this device's id so the site adopts and exports THIS playlist.
+  expect(opened[0]).toMatch(/&device=[0-9a-f-]{36}/);
+});
+
+test('opening the site with ?export=spotify adopts the device and starts the export', async ({ page }) => {
+  const DEVICE = 'aaaaaaaa-1111-4222-8333-444455556666';
+  let authorized = null;
+  await page.route('https://accounts.spotify.com/authorize**', (route) => {
+    authorized = route.request().url();
+    return route.fulfill({ contentType: 'text/html', body: '<html></html>' });
+  });
+
+  await page.goto(`/?export=spotify&device=${DEVICE}`);
+
+  const player = page.locator('audio-player');
+  // Card flips to the playlist so the export progress is visible…
+  await expect(player.locator('.flipCard')).toHaveClass(/flipped/, { timeout: 5000 });
+  // …the delegated device id is adopted…
+  expect(await page.evaluate(() => localStorage.getItem('kexp-player:device-id'))).toBe(DEVICE);
+  // …and the export kicks off (no token yet → Spotify consent redirect).
+  await expect.poll(() => authorized, { timeout: 8000 }).not.toBeNull();
+  expect(authorized).toContain('redirect_uri');
+});
+
 test('spotify export with no hearts asks for hearts first', async ({ page }) => {
   const player = page.locator('audio-player');
   await player.locator('.playlistChip').click();

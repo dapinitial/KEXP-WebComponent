@@ -7,7 +7,7 @@ import {
 } from './playerEngine.js';
 import { artistSummary, youtubeSearchUrl, spotifySearchUrl } from './wikipedia.js';
 import { setArtwork } from './albumArt.js';
-import { exportToSpotify, hasPendingExport } from './spotify.js';
+import { exportToSpotify, hasPendingExport, delegatedExport } from './spotify.js';
 import { recordingCredits } from './musicbrainz.js';
 import { artistEnrichment, formatListeners } from './enrich.js';
 
@@ -1011,6 +1011,7 @@ class AudioPlayer extends HTMLElement {
     'backend-url',
     'backend-key',
     'spotify-client-id',
+    'spotify-export-url',
   ];
 
   #engine;
@@ -1149,10 +1150,41 @@ class AudioPlayer extends HTMLElement {
     // Returning from Spotify's consent screen: finish the export the user
     // started (their click survives the round-trip via sessionStorage), and
     // flip to the playlist so the progress is visible.
-    if (this.getAttribute('spotify-client-id') && hasPendingExport()) {
-      this.#setFlipped(true);
-      this.#runSpotifyExport();
+    if (this.getAttribute('spotify-client-id')) {
+      if (hasPendingExport()) {
+        this.#setFlipped(true);
+        this.#runSpotifyExport();
+      } else {
+        const delegated = delegatedExport();
+        if (delegated) this.#startDelegatedExport(delegated.device);
+      }
     }
+  }
+
+  // Another surface opened us with ?export=spotify[&device=…] — adopt that
+  // surface's playlist, then run the site's normal export on it.
+  async #startDelegatedExport(device) {
+    // Strip the trigger params so a reload doesn't re-fire the export.
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete('export');
+    clean.searchParams.delete('device');
+    window.history.replaceState(null, '', clean);
+
+    if (device) {
+      this.#engine.adoptDeviceId?.(device);
+      // Let the adopted playlist reconcile from the cloud before exporting.
+      await new Promise((resolve) => {
+        const done = () => {
+          this.#engine.removeEventListener?.('playlist-changed', done);
+          resolve();
+        };
+        this.#engine.addEventListener?.('playlist-changed', done, { once: true });
+        setTimeout(done, 2500);
+      });
+    }
+
+    this.#setFlipped(true);
+    this.#runSpotifyExport();
   }
 
   disconnectedCallback() {
@@ -1174,9 +1206,11 @@ class AudioPlayer extends HTMLElement {
 
   attributeChangedCallback(name, oldValue, newValue) {
     if (oldValue === newValue) return;
-    if (name === 'spotify-client-id') {
-      // Export is offered only when a host wires up a Spotify app.
-      this.#spotifyExport.hidden = !newValue;
+    if (name === 'spotify-client-id' || name === 'spotify-export-url') {
+      // Export is offered when a host either runs its own OAuth
+      // (spotify-client-id) or delegates to one that does (spotify-export-url).
+      this.#spotifyExport.hidden =
+        !this.getAttribute('spotify-client-id') && !this.getAttribute('spotify-export-url');
       return;
     }
     this.#engine.configure(this.#attributeConfig());
@@ -1435,6 +1469,19 @@ class AudioPlayer extends HTMLElement {
   }
 
   async #runSpotifyExport() {
+    // Surfaces without their own OAuth (extension popup, menu bar) delegate
+    // to the site, which owns the registered redirect. Carry this device's
+    // id so the site adopts — and exports — THIS playlist.
+    const exportUrl = this.getAttribute('spotify-export-url');
+    if (exportUrl && !this.getAttribute('spotify-client-id')) {
+      const id = this.#engine.deviceId;
+      const url = id
+        ? `${exportUrl}${exportUrl.includes('?') ? '&' : '?'}device=${encodeURIComponent(id)}`
+        : exportUrl;
+      window.open(url, '_blank', 'noopener');
+      return;
+    }
+
     const clientId = this.getAttribute('spotify-client-id');
     if (!clientId) return;
 

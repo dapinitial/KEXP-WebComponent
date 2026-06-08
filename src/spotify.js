@@ -88,6 +88,15 @@ export function hasPendingExport() {
   );
 }
 
+// Another surface (extension popup, menu bar) delegated an export to the
+// site by opening it with ?export=spotify[&device=…]. The device id lets the
+// site adopt that surface's playlist before exporting.
+export function delegatedExport() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('export') !== 'spotify') return null;
+  return { device: params.get('device') };
+}
+
 async function completeAuth(clientId) {
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
