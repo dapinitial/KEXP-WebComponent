@@ -227,6 +227,80 @@ test('disables liking during air breaks', async ({ page }) => {
   await expect(player.locator('.actionRail')).toBeHidden();
 });
 
+test('skip mutes the stream until the track changes', async ({ page }) => {
+  await page.evaluate(mockAudioElement);
+
+  const player = page.locator('audio-player');
+  const skip = player.locator('.skipButton');
+
+  // Disabled until the stream is playing — skipping silence is meaningless.
+  await expect(skip).toBeDisabled();
+  await player.locator('.playPauseButton').click();
+  await expect(skip).toBeEnabled();
+
+  // Speed up polling so the post-skip cadence is test-fast.
+  await page.evaluate(() =>
+    document.querySelector('audio-player').setAttribute('poll-interval', '200')
+  );
+
+  await skip.click();
+  await expect(skip).toHaveClass(/skipping/);
+  await expect(player.locator('.marquee')).toContainText('Skipping');
+  expect(
+    await page.evaluate(
+      () => document.querySelector('audio-player').shadowRoot.querySelector('#audioPlayer').muted
+    )
+  ).toBe(true);
+
+  // Next song lands → sound comes back on its own.
+  await page.route(API_PATTERN, (route) =>
+    route.fulfill({
+      json: playFixture({ artist: 'Sleater-Kinney', song: 'Dig Me Out', airdate: '2026-06-06T10:03:00-07:00' }),
+    })
+  );
+  await expect(player.locator('.marquee')).toContainText('Sleater-Kinney', { timeout: 10000 });
+  await expect(skip).not.toHaveClass(/skipping/);
+  expect(
+    await page.evaluate(
+      () => document.querySelector('audio-player').shadowRoot.querySelector('#audioPlayer').muted
+    )
+  ).toBe(false);
+});
+
+test('skip cancels on second click and on pause', async ({ page }) => {
+  await page.evaluate(mockAudioElement);
+
+  const player = page.locator('audio-player');
+  const skip = player.locator('.skipButton');
+  const button = player.locator('.playPauseButton');
+
+  await button.click();
+  await expect(skip).toBeEnabled();
+
+  // Click twice: skip on, skip off — unmuted again.
+  await skip.click();
+  await expect(skip).toHaveClass(/skipping/);
+  await skip.click();
+  await expect(skip).not.toHaveClass(/skipping/);
+  expect(
+    await page.evaluate(
+      () => document.querySelector('audio-player').shadowRoot.querySelector('#audioPlayer').muted
+    )
+  ).toBe(false);
+
+  // Pausing mid-skip clears the skip — play again starts loud, not muted.
+  await skip.click();
+  await expect(skip).toHaveClass(/skipping/);
+  await button.click();
+  await expect(skip).toBeDisabled();
+  await expect(skip).not.toHaveClass(/skipping/);
+  expect(
+    await page.evaluate(
+      () => document.querySelector('audio-player').shadowRoot.querySelector('#audioPlayer').muted
+    )
+  ).toBe(false);
+});
+
 test('the action rail links to the current song on YouTube and Spotify', async ({ page }) => {
   const player = page.locator('audio-player');
   await expect(player.locator('.actionRail')).toBeVisible();

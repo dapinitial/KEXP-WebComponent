@@ -592,8 +592,12 @@ sheet.replaceSync(`
     place-items: center;
     width: 18px;
     height: 18px;
+    padding: 0;
+    background: transparent;
+    border: none;
     border-radius: 4px;
     color: var(--player-muted);
+    cursor: pointer;
     opacity: 0.55;
     transition: color 0.2s ease, opacity 0.2s ease;
 
@@ -611,6 +615,29 @@ sheet.replaceSync(`
       outline: 2px solid var(--player-accent);
       outline-offset: 1px;
       opacity: 1;
+    }
+
+    &:disabled {
+      opacity: 0.25;
+      cursor: default;
+    }
+
+    &.skipping {
+      color: var(--player-accent);
+      opacity: 1;
+      animation: skip-pulse 1s ease-in-out infinite;
+    }
+  }
+
+  @keyframes skip-pulse {
+    50% {
+      opacity: 0.4;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .railLink.skipping {
+      animation: none;
     }
   }
 
@@ -850,6 +877,11 @@ template.innerHTML = `
             <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.56.3z"></path>
           </svg>
         </a>
+        <button class="railLink skipButton" part="skip" type="button" aria-pressed="false" aria-label="Skip this song — mute until the next one" disabled>
+          <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 18l8.5-6L6 6v12zM16 6h2v12h-2z"></path>
+          </svg>
+        </button>
       </div>
       </section>
       <section class="cardFace cardBack" part="back" inert>
@@ -916,6 +948,7 @@ class AudioPlayer extends HTMLElement {
   #actionRail;
   #youtubeRailLink;
   #spotifyRailLink;
+  #skipButton;
   #heartWrap;
   #flipCard;
   #cardFront;
@@ -960,6 +993,8 @@ class AudioPlayer extends HTMLElement {
     this.#actionRail = shadow.querySelector('.actionRail');
     this.#youtubeRailLink = shadow.querySelector('.youtubeRailLink');
     this.#spotifyRailLink = shadow.querySelector('.spotifyRailLink');
+    this.#skipButton = shadow.querySelector('.skipButton');
+    this.#skipButton.addEventListener('click', () => this.#engine.toggleSkip?.());
     this.#flipCard = shadow.querySelector('.flipCard');
     this.#cardFront = shadow.querySelector('.cardFront');
     this.#cardBack = shadow.querySelector('.cardBack');
@@ -1137,7 +1172,17 @@ class AudioPlayer extends HTMLElement {
       'playing-changed',
       (e) => {
         this.#updatePlaybackUI();
+        this.#updateSkipUI();
         this.dispatchEvent(new CustomEvent('playing-changed', { detail: e.detail }));
+      },
+      { signal }
+    );
+
+    engine.addEventListener(
+      'skip-changed',
+      (e) => {
+        this.#updateSkipUI();
+        this.dispatchEvent(new CustomEvent('skip-changed', { detail: e.detail }));
       },
       { signal }
     );
@@ -1218,6 +1263,7 @@ class AudioPlayer extends HTMLElement {
   #syncFromEngine() {
     this.#updatePlaybackUI();
     this.#updateLikeUI();
+    this.#updateSkipUI();
 
     const play = this.#engine.currentPlay;
     if (play) {
@@ -1250,7 +1296,10 @@ class AudioPlayer extends HTMLElement {
   }
 
   #updateNowPlaying(play) {
-    if (isLikeablePlay(play)) {
+    if (this.#engine.isSkipping) {
+      // The stream is muted — say so, or silence reads as breakage.
+      this.#marquee.textContent = 'Skipping — sound returns with the next song';
+    } else if (isLikeablePlay(play)) {
       const artist = play.artist || 'Unknown Artist';
       const song = play.song || 'Unknown Song';
       this.#marquee.textContent = `Listening to: ${artist} - ${song} on 90.3 FM Seattle`;
@@ -1284,6 +1333,22 @@ class AudioPlayer extends HTMLElement {
       : '';
     this.#showLine.hidden = !text;
     this.#showLine.textContent = text;
+  }
+
+  #updateSkipUI() {
+    const skipping = Boolean(this.#engine.isSkipping);
+    this.#skipButton.disabled = !this.#engine.isPlaying;
+    this.#skipButton.classList.toggle('skipping', skipping);
+    this.#skipButton.setAttribute('aria-pressed', String(skipping));
+    this.#skipButton.setAttribute(
+      'aria-label',
+      skipping ? 'Cancel skip — unmute now' : 'Skip this song — mute until the next one'
+    );
+    // Refresh the marquee (it carries the "Skipping —" notice) — but never
+    // stomp the initial "Loading…" text before the first play arrives.
+    if (this.#engine.currentPlay || skipping) {
+      this.#updateNowPlaying(this.#engine.currentPlay);
+    }
   }
 
   #updateLikeUI() {

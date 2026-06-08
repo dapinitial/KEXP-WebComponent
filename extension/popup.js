@@ -6,6 +6,7 @@ import './../src/audioPlayer.js';
 
 const EMPTY_STATE = {
   isPlaying: false,
+  isSkipping: false,
   currentPlay: null,
   playlist: [],
   isLiked: false,
@@ -48,6 +49,10 @@ class RemoteEngine extends EventTarget {
     this.#send('toggle-like');
   }
 
+  toggleSkip() {
+    this.#send('toggle-skip');
+  }
+
   removeLike(key) {
     this.#send('remove-like', { key });
   }
@@ -68,6 +73,10 @@ class RemoteEngine extends EventTarget {
 
   get isPlaying() {
     return this.#state.isPlaying;
+  }
+
+  get isSkipping() {
+    return this.#state.isSkipping ?? false;
   }
 
   get currentPlay() {

@@ -43,6 +43,7 @@ export class PlayerEngine extends EventTarget {
   #audioInitialized = false;
   #pollTimer = null;
   #pollingActive = false;
+  #skipping = false;
   #fetchController = null;
   #likedTracks;
   #errorMessage = null;
@@ -168,6 +169,10 @@ export class PlayerEngine extends EventTarget {
     return this.#globalLikes;
   }
 
+  get isSkipping() {
+    return this.#skipping;
+  }
+
   get currentShow() {
     return this.#currentShow;
   }
@@ -175,6 +180,7 @@ export class PlayerEngine extends EventTarget {
   snapshot() {
     return {
       isPlaying: this.#isPlaying,
+      isSkipping: this.#skipping,
       currentPlay: this.#currentPlay,
       playlist: this.playlist,
       isLiked: this.isLiked,
@@ -210,6 +216,27 @@ export class PlayerEngine extends EventTarget {
     } else {
       this.play();
     }
+  }
+
+  // "Skip" on live radio: mute now, unmute when the play changes. The stream
+  // keeps running — we just ride out the rest of this song in silence.
+  toggleSkip() {
+    if (this.#skipping) {
+      this.#endSkip();
+      return;
+    }
+    if (!this.#isPlaying) return;
+    this.#skipping = true;
+    this.#audio.muted = true;
+    if (this.#pollingActive) this.startPolling(); // jump to the fast cadence
+    this.#emit('skip-changed', { skipping: true });
+  }
+
+  #endSkip() {
+    if (!this.#skipping) return;
+    this.#skipping = false;
+    this.#audio.muted = false;
+    this.#emit('skip-changed', { skipping: false });
   }
 
   toggleLike() {
@@ -320,10 +347,12 @@ export class PlayerEngine extends EventTarget {
     const poll = async () => {
       await this.#fetchNowPlaying();
       // Airbreaks are short — poll faster so the heart re-enables the
-      // moment music returns.
-      const interval = isLikeablePlay(this.#currentPlay)
-        ? this.#pollInterval
-        : Math.min(5000, this.#pollInterval);
+      // moment music returns. Same urgency while skipping: the unmute
+      // should land as close to the song change as possible.
+      const interval =
+        isLikeablePlay(this.#currentPlay) && !this.#skipping
+          ? this.#pollInterval
+          : Math.min(5000, this.#pollInterval);
       this.#pollTimer = setTimeout(poll, interval);
     };
 
@@ -396,6 +425,7 @@ export class PlayerEngine extends EventTarget {
   #setPlaying(playing) {
     if (this.#isPlaying === playing) return;
     this.#isPlaying = playing;
+    if (!playing) this.#endSkip(); // pausing makes a skip meaningless
     this.#emit('playing-changed', { isPlaying: playing });
   }
 
@@ -444,6 +474,7 @@ export class PlayerEngine extends EventTarget {
       if (play && play.airdate !== this.#currentPlay?.airdate) {
         this.#currentPlay = play;
         this.#emit('track-changed', { play });
+        this.#endSkip(); // the skipped song is over — sound back on
         this.#refreshGlobalCount(play);
         this.#refreshShow(play.show);
       }

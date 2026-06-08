@@ -19,6 +19,7 @@ const broadcast = (event, detail) => {
 
 for (const event of [
   'playing-changed',
+  'skip-changed',
   'track-changed',
   'like-changed',
   'playlist-changed',
@@ -56,6 +57,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       break;
     case 'toggle-like':
       engine.toggleLike();
+      break;
+    case 'toggle-skip':
+      engine.toggleSkip();
       break;
     case 'remove-like':
       engine.removeLike(msg.key);
