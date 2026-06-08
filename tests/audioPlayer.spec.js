@@ -222,6 +222,25 @@ test('disables liking during air breaks', async ({ page }) => {
   const player = page.locator('audio-player');
   await expect(player.locator('.marquee')).toContainText('Air break');
   await expect(player.locator('.likeButton')).toBeDisabled();
+  // The whole action rail (heart + YouTube/Spotify links) steps aside —
+  // there's no song to like or link to.
+  await expect(player.locator('.actionRail')).toBeHidden();
+});
+
+test('the action rail links to the current song on YouTube and Spotify', async ({ page }) => {
+  const player = page.locator('audio-player');
+  await expect(player.locator('.actionRail')).toBeVisible();
+
+  const query = encodeURIComponent("Mudhoney Touch Me I'm Sick");
+  await expect(player.locator('.youtubeRailLink')).toHaveAttribute(
+    'href',
+    `https://www.youtube.com/results?search_query=${query}`
+  );
+  await expect(player.locator('.spotifyRailLink')).toHaveAttribute(
+    'href',
+    `https://open.spotify.com/search/${query}`
+  );
+  await expect(player.locator('.spotifyRailLink')).toHaveAttribute('target', '_blank');
 });
 
 test('liking a song never triggers playback', async ({ page }) => {
@@ -467,6 +486,89 @@ test('playlist rows link to a YouTube search for the song', async ({ page }) => 
     `https://www.youtube.com/results?search_query=${encodeURIComponent("Mudhoney Touch Me I'm Sick")}`
   );
   await expect(youtube).toHaveAttribute('target', '_blank');
+
+  const spotify = player.locator('.playlist li .spotifyLink');
+  await expect(spotify).toHaveAttribute(
+    'href',
+    `https://open.spotify.com/search/${encodeURIComponent("Mudhoney Touch Me I'm Sick")}`
+  );
+  await expect(spotify).toHaveAttribute('target', '_blank');
+});
+
+test('album art retries, then falls back to iTunes artwork when the archive fails', async ({ page }) => {
+  // Cover Art Archive outage: this art 500s on every attempt.
+  await page.route('https://images.test/broken.jpg*', (route) =>
+    route.fulfill({ status: 500, body: '' })
+  );
+  await page.route('https://itunes.apple.com/search**', (route) =>
+    route.fulfill({
+      json: { results: [{ artworkUrl100: 'https://images.test/itunes-100x100.jpg' }] },
+    })
+  );
+  await page.route(API_PATTERN, (route) =>
+    route.fulfill({ json: playFixture({ thumbnail_uri: 'https://images.test/broken.jpg' }) })
+  );
+  await page.reload();
+
+  // Original fails → one quiet retry fails → iTunes art lands (600×600 swap).
+  const nowArt = page.locator('audio-player .nowArt');
+  await expect(nowArt).toHaveAttribute('src', 'https://images.test/itunes-600x600.jpg', {
+    timeout: 10000,
+  });
+  await expect(nowArt).toBeVisible();
+});
+
+test('album art shows the ♪ placeholder when every source fails', async ({ page }) => {
+  await page.route('https://images.test/**', (route) => route.fulfill({ status: 500, body: '' }));
+  await page.route('https://itunes.apple.com/search**', (route) =>
+    route.fulfill({ json: { results: [] } })
+  );
+  await page.route(API_PATTERN, (route) =>
+    route.fulfill({ json: playFixture({ thumbnail_uri: 'https://images.test/broken.jpg' }) })
+  );
+  await page.reload();
+
+  const player = page.locator('audio-player');
+  const like = player.locator('.likeButton');
+  await expect(like).toBeEnabled();
+  await like.click();
+  await player.locator('.playlistChip').click();
+
+  await expect(player.locator('.playlist li .albumArt')).toHaveText('♪', { timeout: 10000 });
+  await expect(player.locator('.nowArt')).toBeHidden();
+});
+
+test('collab billings look up the primary artist on Wikipedia', async ({ page }) => {
+  // "Jamie xx feat. Honey Dijon" has no article — the lookup should ask for
+  // "Jamie xx" instead of 404ing on the full billing.
+  let requested = null;
+  await page.route('https://en.wikipedia.org/api/rest_v1/page/summary/**', (route) => {
+    requested = decodeURIComponent(route.request().url().split('/summary/')[1]);
+    return route.fulfill({
+      json: {
+        title: 'Jamie xx',
+        extract: 'Jamie xx is an English producer.',
+        thumbnail: null,
+        content_urls: { desktop: { page: 'https://en.wikipedia.org/wiki/Jamie_xx' } },
+      },
+    });
+  });
+  await page.route(API_PATTERN, (route) =>
+    route.fulfill({
+      json: playFixture({ artist: 'Jamie xx feat. Honey Dijon', song: 'Baddy On The Floor' }),
+    })
+  );
+  await page.reload();
+
+  const player = page.locator('audio-player');
+  const like = player.locator('.likeButton');
+  await expect(like).toBeEnabled();
+  await like.click();
+  await player.locator('.playlistChip').click();
+  await player.locator('.playlist li .artistLink').hover();
+
+  await expect(player.locator('.hoverCard .hoverCardTitle')).toHaveText('Jamie xx');
+  expect(requested).toBe('Jamie xx');
 });
 
 test('hovering an artist shows a Wikipedia card', async ({ page }) => {

@@ -6,8 +6,15 @@ const SUMMARY_URL = 'https://en.wikipedia.org/api/rest_v1/page/summary/';
 
 const cache = new Map();
 
-export function artistSummary(artist) {
-  if (!artist || artist === 'Unknown Artist') return Promise.resolve(null);
+// "Jamie xx feat. Honey Dijon" has no Wikipedia article — "Jamie xx" does.
+// Look up the primary artist, not the collaboration billing.
+function primaryArtist(artist) {
+  return artist.replace(/\s+(?:feat\.?|ft\.?|featuring|with|x)\s+.*$/i, '').trim() || artist;
+}
+
+export function artistSummary(billedArtist) {
+  if (!billedArtist || billedArtist === 'Unknown Artist') return Promise.resolve(null);
+  const artist = primaryArtist(billedArtist);
 
   if (!cache.has(artist)) {
     const promise = fetch(`${SUMMARY_URL}${encodeURIComponent(artist)}`, {
@@ -37,4 +44,8 @@ export function artistSummary(artist) {
 
 export function youtubeSearchUrl(artist, song) {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(`${artist} ${song}`)}`;
+}
+
+export function spotifySearchUrl(artist, song) {
+  return `https://open.spotify.com/search/${encodeURIComponent(`${artist} ${song}`)}`;
 }

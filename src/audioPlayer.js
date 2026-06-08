@@ -5,7 +5,8 @@ import {
   DEFAULT_POLL_INTERVAL_MS,
   DEFAULT_VOLUME,
 } from './playerEngine.js';
-import { artistSummary, youtubeSearchUrl } from './wikipedia.js';
+import { artistSummary, youtubeSearchUrl, spotifySearchUrl } from './wikipedia.js';
+import { setArtwork } from './albumArt.js';
 
 const MARQUEE_SPEED_PX_PER_S = 50;
 const RESIZE_DEBOUNCE_MS = 100;
@@ -384,7 +385,8 @@ sheet.replaceSync(`
     }
   }
 
-  .youtubeLink {
+  .youtubeLink,
+  .spotifyLink {
     display: inline-grid;
     place-items: center;
     width: 22px;
@@ -570,13 +572,49 @@ sheet.replaceSync(`
     padding: 4px 10px;
   }
 
-  /* The heart lives visually inside the play button but is a SIBLING in the
-     DOM — nested buttons are invalid HTML and break keyboard/AT semantics.
-     It anchors to the card front, which hugs the play button when collapsed. */
-  .likeButton {
+  /* The action rail lives visually inside the play button but is a SIBLING
+     in the DOM — nested buttons are invalid HTML and break keyboard/AT
+     semantics. It anchors to the card front, which hugs the play button when
+     collapsed. Heart on top (the star of the show), song links below it —
+     the whole rail hides during airbreaks (nothing to like or link to). */
+  .actionRail {
     position: absolute;
     top: 6px;
     right: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .railLink {
+    display: inline-grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    color: var(--player-muted);
+    opacity: 0.55;
+    transition: color 0.2s ease, opacity 0.2s ease;
+
+    & svg {
+      display: block;
+      fill: currentColor;
+    }
+
+    &:hover {
+      color: var(--player-text);
+      opacity: 1;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--player-accent);
+      outline-offset: 1px;
+      opacity: 1;
+    }
+  }
+
+  .likeButton {
     display: grid;
     place-items: center;
     padding: 4px;
@@ -793,14 +831,26 @@ template.innerHTML = `
         </span>
         <span class="buttonText" part="button-text">PLAY</span>
       </button>
-      <button class="likeButton" part="like" type="button" aria-pressed="false" aria-label="Like this song" disabled>
-        <span class="heartWrap">
-          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
+      <div class="actionRail" part="actions" hidden>
+        <button class="likeButton" part="like" type="button" aria-pressed="false" aria-label="Like this song" disabled>
+          <span class="heartWrap">
+            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
+            </svg>
+          </span>
+          <span class="likeCount" part="like-count" hidden>0</span>
+        </button>
+        <a class="railLink youtubeRailLink" target="_blank" rel="noopener noreferrer">
+          <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"></path>
           </svg>
-        </span>
-        <span class="likeCount" part="like-count" hidden>0</span>
-      </button>
+        </a>
+        <a class="railLink spotifyRailLink" target="_blank" rel="noopener noreferrer">
+          <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.56.3z"></path>
+          </svg>
+        </a>
+      </div>
       </section>
       <section class="cardFace cardBack" part="back" inert>
         <h2 class="playlistTitle">Liked songs</h2>
@@ -863,6 +913,9 @@ class AudioPlayer extends HTMLElement {
   #marqueeWrapper;
   #errorEl;
   #likeButton;
+  #actionRail;
+  #youtubeRailLink;
+  #spotifyRailLink;
   #heartWrap;
   #flipCard;
   #cardFront;
@@ -904,6 +957,9 @@ class AudioPlayer extends HTMLElement {
     this.#errorEl = shadow.querySelector('.errorMessage');
     this.#likeButton = shadow.querySelector('.likeButton');
     this.#heartWrap = shadow.querySelector('.heartWrap');
+    this.#actionRail = shadow.querySelector('.actionRail');
+    this.#youtubeRailLink = shadow.querySelector('.youtubeRailLink');
+    this.#spotifyRailLink = shadow.querySelector('.spotifyRailLink');
     this.#flipCard = shadow.querySelector('.flipCard');
     this.#cardFront = shadow.querySelector('.cardFront');
     this.#cardBack = shadow.querySelector('.cardBack');
@@ -1204,7 +1260,16 @@ class AudioPlayer extends HTMLElement {
 
     const art = play?.thumbnail_uri ?? null;
     this.#nowArt.hidden = !art;
-    if (art) this.#nowArt.src = art;
+    if (art) {
+      setArtwork(this.#nowArt, {
+        url: art,
+        artist: play.artist,
+        album: play.album,
+        onFail: () => {
+          this.#nowArt.hidden = true;
+        },
+      });
+    }
 
     this.#updateMarquee();
     this.#updateLikeUI();
@@ -1223,7 +1288,21 @@ class AudioPlayer extends HTMLElement {
 
   #updateLikeUI() {
     const liked = this.#engine.isLiked;
-    this.#likeButton.disabled = !isLikeablePlay(this.#engine.currentPlay);
+    const play = this.#engine.currentPlay;
+    const likeable = isLikeablePlay(play);
+
+    // Airbreak: nothing to like or link to — the whole rail steps aside.
+    this.#actionRail.hidden = !likeable;
+    if (likeable) {
+      const artist = play.artist || 'Unknown Artist';
+      const song = play.song || 'Unknown Song';
+      this.#youtubeRailLink.href = youtubeSearchUrl(artist, song);
+      this.#youtubeRailLink.setAttribute('aria-label', `Find ${song} by ${artist} on YouTube`);
+      this.#spotifyRailLink.href = spotifySearchUrl(artist, song);
+      this.#spotifyRailLink.setAttribute('aria-label', `Find ${song} by ${artist} on Spotify`);
+    }
+
+    this.#likeButton.disabled = !likeable;
     this.#likeButton.classList.toggle('liked', liked);
     this.#likeButton.setAttribute('aria-pressed', String(liked));
     this.#likeButton.setAttribute('aria-label', liked ? 'Unlike this song' : 'Like this song');
@@ -1338,9 +1417,17 @@ class AudioPlayer extends HTMLElement {
       art.setAttribute('aria-label', `About this play of ${song}`);
       if (track.thumbnail) {
         const img = document.createElement('img');
-        img.src = track.thumbnail;
         img.alt = '';
         img.loading = 'lazy';
+        setArtwork(img, {
+          url: track.thumbnail,
+          artist: track.artist,
+          album: track.album,
+          onFail: () => {
+            img.remove();
+            art.textContent = '♪';
+          },
+        });
         art.appendChild(img);
       } else {
         art.textContent = '♪';
@@ -1386,6 +1473,15 @@ class AudioPlayer extends HTMLElement {
       youtubeLink.rel = 'noopener noreferrer';
       youtubeLink.textContent = '▶';
       youtubeLink.setAttribute('aria-label', `Find ${song} by ${artist} on YouTube`);
+
+      const spotifyLink = document.createElement('a');
+      spotifyLink.className = 'spotifyLink';
+      spotifyLink.href = spotifySearchUrl(artist, song);
+      spotifyLink.target = '_blank';
+      spotifyLink.rel = 'noopener noreferrer';
+      spotifyLink.innerHTML =
+        '<svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.56.3z"/></svg>';
+      spotifyLink.setAttribute('aria-label', `Find ${song} by ${artist} on Spotify`);
 
       const removeButton = document.createElement('button');
       removeButton.className = 'removeButton';
@@ -1495,7 +1591,7 @@ class AudioPlayer extends HTMLElement {
       confirmBox.append(confirmLabel, confirmYes, confirmNo);
       const rowMain = document.createElement('div');
       rowMain.className = 'rowMain';
-      rowMain.append(handle, art, title, youtubeLink, noteButton, removeButton, confirmBox);
+      rowMain.append(handle, art, title, youtubeLink, spotifyLink, noteButton, removeButton, confirmBox);
       li.append(rowMain, noteText, noteInput);
       this.#playlistEl.appendChild(li);
     }
@@ -1671,7 +1767,12 @@ class AudioPlayer extends HTMLElement {
   #populateHoverCard({ image, title, badges = [], meta, extract, url, urlText }) {
     const imageEl = this.#hoverCard.querySelector('.hoverCardImage');
     imageEl.hidden = !image;
-    if (image) imageEl.src = image;
+    if (image) {
+      imageEl.onerror = () => {
+        imageEl.hidden = true;
+      };
+      imageEl.src = image;
+    }
 
     this.#hoverCard.querySelector('.hoverCardTitle').textContent = title;
 
