@@ -8,6 +8,7 @@ import {
 import { artistSummary, youtubeSearchUrl, spotifySearchUrl } from './wikipedia.js';
 import { setArtwork } from './albumArt.js';
 import { exportToSpotify, hasPendingExport } from './spotify.js';
+import { recordingCredits } from './musicbrainz.js';
 
 const MARQUEE_SPEED_PX_PER_S = 50;
 const RESIZE_DEBOUNCE_MS = 100;
@@ -1944,6 +1945,16 @@ class AudioPlayer extends HTMLElement {
       url: null,
     });
     this.#positionHoverCard(row);
+
+    // Studio credits arrive late (MusicBrainz is rate-limited) — append them
+    // if this card is still the one being shown.
+    recordingCredits(track.artist, track.song).then((credits) => {
+      if (!credits || this.#hoverCardArtist !== token) return;
+      const metaEl = this.#hoverCard.querySelector('.hoverCardMeta');
+      metaEl.textContent = metaEl.textContent ? `${metaEl.textContent} · ${credits}` : credits;
+      metaEl.hidden = false;
+      this.#positionHoverCard(row);
+    });
   }
 
   async #showArtistCard(row, artist) {

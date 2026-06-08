@@ -52,6 +52,10 @@ test.beforeEach(async ({ page }) => {
       json: { program_name: 'The Midday Show', host_names: ['Cheryl Waters'] },
     })
   );
+  // Keep MusicBrainz hermetic — individual tests override with fixtures.
+  await page.route('https://musicbrainz.org/ws/2/**', (route) =>
+    route.fulfill({ json: { recordings: [] } })
+  );
   await page.route('https://images.test/**', (route) =>
     route.fulfill({
       contentType: 'image/png',
@@ -730,6 +734,37 @@ test('collab billings look up the primary artist on Wikipedia', async ({ page })
 
   await expect(player.locator('.hoverCard .hoverCardTitle')).toHaveText('Jamie xx');
   expect(requested).toBe('Jamie xx');
+});
+
+test('the track card picks up MusicBrainz studio credits', async ({ page }) => {
+  await page.route('https://musicbrainz.org/ws/2/recording/**', (route) => {
+    const url = route.request().url();
+    if (url.includes('/recording/?query=')) {
+      return route.fulfill({ json: { recordings: [{ id: 'rec-1' }] } });
+    }
+    return route.fulfill({
+      json: {
+        relations: [
+          { type: 'producer', artist: { name: 'Jack Endino' } },
+          { type: 'mix', artist: { name: 'Jack Endino' } },
+        ],
+      },
+    });
+  });
+
+  const player = page.locator('audio-player');
+  const like = player.locator('.likeButton');
+  await expect(like).toBeEnabled();
+  await like.click();
+  await player.locator('.playlistChip').click();
+  await player.locator('.playlist li .albumArt').hover();
+
+  const meta = player.locator('.hoverCard .hoverCardMeta');
+  // Base metadata is instant; credits land after the rate-limited lookups.
+  await expect(meta).toContainText('From “Superfuzz Bigmuff”');
+  await expect(meta).toContainText('Produced by Jack Endino · Mixed by Jack Endino', {
+    timeout: 10000,
+  });
 });
 
 test('hovering an artist shows a Wikipedia card', async ({ page }) => {
