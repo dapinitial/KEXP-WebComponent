@@ -7,6 +7,7 @@ import {
 } from './playerEngine.js';
 import { artistSummary, youtubeSearchUrl, spotifySearchUrl } from './wikipedia.js';
 import { setArtwork } from './albumArt.js';
+import { exportToSpotify, hasPendingExport } from './spotify.js';
 
 const MARQUEE_SPEED_PX_PER_S = 50;
 const RESIZE_DEBOUNCE_MS = 100;
@@ -539,6 +540,66 @@ sheet.replaceSync(`
     }
   }
 
+  /* "Add this list to Spotify" — the export zone under the email form. */
+  .spotifyExport {
+    margin-top: 10px;
+
+    & .spotifyExportButton {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      justify-content: center;
+      padding: 8px 12px;
+      background: var(--player-surface);
+      border: 1px solid rgb(255 255 255 / 12%);
+      border-radius: calc(var(--player-radius) / 2);
+      color: var(--player-text);
+      font: inherit;
+      cursor: pointer;
+
+      & svg {
+        fill: currentColor;
+      }
+
+      &:hover:not(:disabled) {
+        background: var(--player-surface-hover);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--player-accent);
+        outline-offset: 2px;
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+    }
+
+    & .spotifyExportStatus {
+      margin: 8px 0 0;
+      font-size: 12px;
+      color: var(--player-muted);
+
+      & a {
+        color: var(--player-accent);
+      }
+    }
+
+    & .spotifyExportCaveat {
+      margin: 6px 0 0;
+      font-size: 11px;
+      color: var(--player-muted);
+      opacity: 0.8;
+
+      & a {
+        color: inherit;
+        text-decoration: underline;
+      }
+    }
+  }
+
   .playPauseButton {
     cursor: pointer;
     padding: 30px 18px 20px;
@@ -892,6 +953,17 @@ template.innerHTML = `
           <input class="emailInput" type="email" name="email" placeholder="you@example.com" aria-label="Email address" required>
           <button class="emailButton" type="submit">Email me this list</button>
         </form>
+        <div class="spotifyExport" hidden>
+          <button class="spotifyExportButton" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.56.3z"></path>
+            </svg>
+            Add this list to Spotify
+          </button>
+          <p class="spotifyExportStatus" role="status" hidden></p>
+          <p class="spotifyExportCaveat">Uses your Spotify account — songs you export become part of your
+            Spotify history. <a href="https://davidpuerto.com/kexp/privacy/" target="_blank" rel="noopener">Details</a></p>
+        </div>
         <a class="emailLink" hidden aria-hidden="true"></a>
         <button class="flipBackButton" part="menu-close" type="button" aria-label="Close playlist">&#10005;</button>
         <div class="hoverCard" part="hover-card" role="tooltip" hidden>
@@ -932,6 +1004,7 @@ class AudioPlayer extends HTMLElement {
     'poll-interval',
     'backend-url',
     'backend-key',
+    'spotify-client-id',
   ];
 
   #engine;
@@ -949,6 +1022,9 @@ class AudioPlayer extends HTMLElement {
   #youtubeRailLink;
   #spotifyRailLink;
   #skipButton;
+  #spotifyExport;
+  #spotifyExportButton;
+  #spotifyExportStatus;
   #heartWrap;
   #flipCard;
   #cardFront;
@@ -995,6 +1071,10 @@ class AudioPlayer extends HTMLElement {
     this.#spotifyRailLink = shadow.querySelector('.spotifyRailLink');
     this.#skipButton = shadow.querySelector('.skipButton');
     this.#skipButton.addEventListener('click', () => this.#engine.toggleSkip?.());
+    this.#spotifyExport = shadow.querySelector('.spotifyExport');
+    this.#spotifyExportButton = shadow.querySelector('.spotifyExportButton');
+    this.#spotifyExportStatus = shadow.querySelector('.spotifyExportStatus');
+    this.#spotifyExportButton.addEventListener('click', () => this.#runSpotifyExport());
     this.#flipCard = shadow.querySelector('.flipCard');
     this.#cardFront = shadow.querySelector('.cardFront');
     this.#cardBack = shadow.querySelector('.cardBack');
@@ -1059,6 +1139,14 @@ class AudioPlayer extends HTMLElement {
 
     this.#engine.configure(this.#attributeConfig());
     this.#engine.startPolling();
+
+    // Returning from Spotify's consent screen: finish the export the user
+    // started (their click survives the round-trip via sessionStorage), and
+    // flip to the playlist so the progress is visible.
+    if (this.getAttribute('spotify-client-id') && hasPendingExport()) {
+      this.#setFlipped(true);
+      this.#runSpotifyExport();
+    }
   }
 
   disconnectedCallback() {
@@ -1080,6 +1168,11 @@ class AudioPlayer extends HTMLElement {
 
   attributeChangedCallback(name, oldValue, newValue) {
     if (oldValue === newValue) return;
+    if (name === 'spotify-client-id') {
+      // Export is offered only when a host wires up a Spotify app.
+      this.#spotifyExport.hidden = !newValue;
+      return;
+    }
     this.#engine.configure(this.#attributeConfig());
   }
 
@@ -1333,6 +1426,64 @@ class AudioPlayer extends HTMLElement {
       : '';
     this.#showLine.hidden = !text;
     this.#showLine.textContent = text;
+  }
+
+  async #runSpotifyExport() {
+    const clientId = this.getAttribute('spotify-client-id');
+    if (!clientId) return;
+
+    const tracks = this.#engine.playlist;
+    const status = this.#spotifyExportStatus;
+    status.hidden = false;
+
+    if (!tracks.length) {
+      status.textContent = 'Nothing to export yet — heart some songs first.';
+      return;
+    }
+
+    this.#spotifyExportButton.disabled = true;
+    try {
+      const result = await exportToSpotify({
+        clientId,
+        tracks,
+        onStatus: (text) => {
+          status.textContent = text;
+        },
+      });
+      if (!result) return; // redirected to Spotify; we'll resume on return
+
+      status.textContent = '';
+      const summary = document.createElement('span');
+      summary.textContent =
+        result.added === 0 && result.missed.length === 0
+          ? 'Already up to date — every song is in the playlist. '
+          : `Added ${result.added} of ${result.total}. `;
+      status.appendChild(summary);
+      if (result.url) {
+        const link = document.createElement('a');
+        link.href = result.url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = 'Open in Spotify';
+        status.appendChild(link);
+      }
+      if (result.missed.length) {
+        const detail = result.missed
+          .slice(0, 3)
+          .map((t) => `${t.artist} — ${t.song}`)
+          .join(', ');
+        const more = result.missed.length > 3 ? '…' : '';
+        status.appendChild(
+          document.createTextNode(
+            ` Not on Spotify (${result.missed.length}): ${detail}${more}`
+          )
+        );
+      }
+    } catch (err) {
+      status.textContent = err?.message ?? 'Spotify export failed — try again.';
+    } finally {
+      this.#spotifyExportButton.disabled = false;
+    }
   }
 
   #updateSkipUI() {

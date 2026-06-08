@@ -301,6 +301,93 @@ test('skip cancels on second click and on pause', async ({ page }) => {
   ).toBe(false);
 });
 
+test('exports the playlist to Spotify through the PKCE round-trip', async ({ page }) => {
+  // Spotify's consent screen: immediately bounce back with a code, echoing
+  // the state and redirect_uri the player asked for.
+  await page.route('https://accounts.spotify.com/authorize**', (route) => {
+    const url = new URL(route.request().url());
+    const redirect = url.searchParams.get('redirect_uri');
+    const state = url.searchParams.get('state');
+    // (WebKit's route.fulfill rejects 302s — a JS bounce works everywhere.)
+    const back = `${redirect}?code=test-code&state=${encodeURIComponent(state)}`;
+    return route.fulfill({
+      contentType: 'text/html',
+      body: `<script>location.replace(${JSON.stringify(back)})</script>`,
+    });
+  });
+  await page.route('https://accounts.spotify.com/api/token', (route) =>
+    route.fulfill({ json: { access_token: 'test-token', token_type: 'Bearer', expires_in: 3600 } })
+  );
+  await page.route('https://api.spotify.com/v1/me', (route) =>
+    route.fulfill({ json: { id: 'david' } })
+  );
+  await page.route('https://api.spotify.com/v1/me/playlists**', (route) =>
+    route.fulfill({ json: { items: [] } })
+  );
+  await page.route('https://api.spotify.com/v1/users/david/playlists', (route) =>
+    route.fulfill({
+      json: {
+        id: 'pl1',
+        name: 'KEXP Likes',
+        owner: { id: 'david' },
+        external_urls: { spotify: 'https://open.spotify.com/playlist/pl1' },
+      },
+    })
+  );
+  let posted = null;
+  await page.route('https://api.spotify.com/v1/playlists/pl1/tracks**', (route) => {
+    if (route.request().method() === 'POST') {
+      posted = route.request().postDataJSON().uris;
+      return route.fulfill({ json: { snapshot_id: 'snap' } });
+    }
+    return route.fulfill({ json: { items: [], next: null } });
+  });
+  // Mudhoney matches; the white-label obscurity doesn't (precise or loose).
+  await page.route('https://api.spotify.com/v1/search**', (route) => {
+    const q = new URL(route.request().url()).searchParams.get('q');
+    const found = q.includes('Mudhoney');
+    return route.fulfill({ json: { tracks: { items: found ? [{ uri: 'spotify:track:m1' }] : [] } } });
+  });
+
+  await page.addInitScript(() => {
+    if (localStorage.getItem('kexp-player:seeded')) return;
+    localStorage.setItem('kexp-player:seeded', '1');
+    localStorage.setItem(
+      'kexp-player:likes',
+      JSON.stringify([
+        ['Mudhoney|Touch Me I\'m Sick', { artist: 'Mudhoney', song: 'Touch Me I\'m Sick', likedAt: '2026-06-01T10:00:00Z' }],
+        ['Obscurity|White Label Dub', { artist: 'Obscurity', song: 'White Label Dub', likedAt: '2026-06-02T10:00:00Z' }],
+      ])
+    );
+  });
+  // The mocked authorize endpoint echoes redirect_uri verbatim, so the whole
+  // round-trip stays on this origin (real-URI registration is config, not
+  // component behavior).
+  await page.reload();
+
+  const player = page.locator('audio-player');
+  await player.locator('.playlistChip').click();
+  await expect(player.locator('.spotifyExportButton')).toBeVisible();
+  await player.locator('.spotifyExportButton').click();
+
+  // Full round-trip: authorize → back with code → token → matched export.
+  const status = player.locator('.spotifyExportStatus');
+  await expect(status).toContainText('Added 1 of 2', { timeout: 15000 });
+  await expect(status).toContainText('Not on Spotify (1): Obscurity — White Label Dub');
+  await expect(status.locator('a')).toHaveAttribute(
+    'href',
+    'https://open.spotify.com/playlist/pl1'
+  );
+  expect(posted).toEqual(['spotify:track:m1']);
+});
+
+test('spotify export with no hearts asks for hearts first', async ({ page }) => {
+  const player = page.locator('audio-player');
+  await player.locator('.playlistChip').click();
+  await player.locator('.spotifyExportButton').click();
+  await expect(player.locator('.spotifyExportStatus')).toContainText('heart some songs first');
+});
+
 test('the action rail links to the current song on YouTube and Spotify', async ({ page }) => {
   const player = page.locator('audio-player');
   await expect(player.locator('.actionRail')).toBeVisible();
