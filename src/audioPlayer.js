@@ -448,9 +448,13 @@ sheet.replaceSync(`
 
     & .hoverCardBadges {
       display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
       gap: 4px;
 
       & .badge {
+        flex: 0 0 auto;
+        white-space: nowrap;
         font-size: 9px;
         letter-spacing: 0.08em;
         padding: 2px 6px;
@@ -2061,9 +2065,24 @@ class AudioPlayer extends HTMLElement {
   }
 
   #positionHoverCard(row) {
-    // Sit just below the hovered row, in the panel's scrollable coords.
-    this.#hoverCard.style.top = `${row.offsetTop + row.offsetHeight + 6}px`;
-    this.#hoverCard.hidden = false;
+    const card = this.#hoverCard;
+    card.hidden = false; // must be laid out to measure its height
+
+    // Default below the row; flip above when the bottom rows would clip the
+    // card against the panel's edge. Viewport rects so scroll is accounted
+    // for; `top` is still set in the panel's scroll coords (shared parent).
+    const container = card.offsetParent ?? row.offsetParent;
+    const rowRect = row.getBoundingClientRect();
+    const contRect = container.getBoundingClientRect();
+    const cardHeight = card.offsetHeight;
+
+    const roomBelow = contRect.bottom - rowRect.bottom;
+    const roomAbove = rowRect.top - contRect.top;
+    const flipUp = roomBelow < cardHeight + 12 && roomAbove > cardHeight + 12;
+
+    card.style.top = flipUp
+      ? `${row.offsetTop - cardHeight - 6}px`
+      : `${row.offsetTop + row.offsetHeight + 6}px`;
   }
 
   #scheduleHideArtistCard() {
