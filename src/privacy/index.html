@@ -106,6 +106,12 @@
         device ID</li>
       <li><code>en.wikipedia.org</code> — short artist summaries for the song you're looking
         at</li>
+      <li><code>musicbrainz.org</code> — studio credits (producer, mixer) for a track</li>
+      <li>the player's own <code>enrich</code> function on Supabase — fetches artist tags,
+        listener counts, and similar artists from Last.fm (the Last.fm key stays on the
+        server, never in your browser)</li>
+      <li><code>itunes.apple.com</code> — a fallback source for album art when the primary
+        artwork is unavailable</li>
     </ul>
 
     <h2>The browser extension</h2>
@@ -139,6 +145,24 @@
         the old playlist is no longer reachable from your browser.</li>
       <li>Want the stored rows actually deleted? Email
         <a href="mailto:me@davidpuerto.com">me@davidpuerto.com</a> and I'll remove them.</li>
+    </ul>
+
+    <h2>Credits &amp; data sources</h2>
+    <p>This player stands on a lot of generous open data. Thank you to:</p>
+    <ul>
+      <li><strong>KEXP</strong> — the music, the stream, and the
+        <a href="https://api.kexp.org" target="_blank" rel="noopener">public API</a>.</li>
+      <li><strong>Last.fm</strong> — artist tags, listener counts, and similar artists.
+        Data provided by <a href="https://www.last.fm" target="_blank" rel="noopener">Last.fm</a>.</li>
+      <li><strong>MusicBrainz</strong> — studio credits, under the
+        <a href="https://musicbrainz.org" target="_blank" rel="noopener">MusicBrainz</a> open
+        data license.</li>
+      <li><strong>Wikipedia</strong> — artist summaries, via the Wikimedia API.</li>
+      <li><strong>Cover Art Archive</strong> and the <strong>iTunes Search API</strong> — album
+        artwork.</li>
+      <li><strong>Spotify</strong> — playlist export uses the
+        <a href="https://developer.spotify.com" target="_blank" rel="noopener">Spotify Web API</a>;
+        Spotify is a trademark of Spotify AB.</li>
     </ul>
 
     <h2>Not affiliated with KEXP</h2>

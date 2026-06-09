@@ -501,6 +501,15 @@ sheet.replaceSync(`
       color: var(--player-muted);
     }
 
+    & .dataCredit {
+      color: var(--player-muted);
+      opacity: 0.75;
+    }
+
+    & a.dataCredit {
+      text-decoration: underline;
+    }
+
     & .hoverCardExtract {
       margin: 0;
       font-size: 12px;
@@ -2103,11 +2112,24 @@ class AudioPlayer extends HTMLElement {
       ]
         .filter(Boolean)
         .join(' · ');
+
+      const metaEl = this.#hoverCard.querySelector('.hoverCardMeta');
       if (line) {
-        const metaEl = this.#hoverCard.querySelector('.hoverCardMeta');
         metaEl.textContent = metaEl.textContent ? `${metaEl.textContent} · ${line}` : line;
-        metaEl.hidden = false;
       }
+      // Attribution required by Last.fm's API terms whenever their data shows.
+      metaEl.append(metaEl.textContent ? ' · ' : '');
+      const credit = document.createElement(extra.url ? 'a' : 'span');
+      credit.className = 'dataCredit';
+      credit.textContent = 'via Last.fm';
+      if (extra.url) {
+        credit.href = extra.url;
+        credit.target = '_blank';
+        credit.rel = 'noopener noreferrer';
+      }
+      metaEl.appendChild(credit);
+      metaEl.hidden = false;
+
       this.#positionHoverCard(row);
     });
   }

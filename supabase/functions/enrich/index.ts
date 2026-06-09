@@ -34,8 +34,28 @@ async function lastfm(method: string, artist: string, params: Record<string, str
   return response.json();
 }
 
+// Public endpoint, but it spends our Last.fm quota and Supabase invocations,
+// so turn away requests that aren't one of our own surfaces. The 24h CDN
+// cache absorbs legit repeats; this just stops drive-by scripting. (A
+// determined caller can spoof these headers — acceptable for read-only,
+// cached, public music data.)
+function fromOurSurface(req: Request): boolean {
+  const who = req.headers.get('origin') || req.headers.get('referer') || '';
+  return (
+    who.includes('davidpuerto.com') ||
+    who.startsWith('chrome-extension://') ||
+    who.startsWith('moz-extension://') ||
+    who.startsWith('tauri://') ||
+    who.includes('tauri.localhost') ||
+    who.includes('localhost') ||
+    who.includes('127.0.0.1')
+  );
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+
+  if (!fromOurSurface(req)) return json({ error: 'forbidden' }, 403);
 
   const artist = new URL(req.url).searchParams.get('artist')?.trim();
   if (!artist) return json({ error: 'artist required' }, 400);
